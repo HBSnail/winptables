@@ -32,6 +32,24 @@ Public Class WinptablesService
             Exit Sub
         End If
 
+        'Get saved data from windows registry
+        PreroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.PREROUTING)
+        ForwardFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.FORWARD)
+        InputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.INPUT)
+        OutputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.OUTPUT)
+        PostroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.POSTROUTING)
+
+        If PreroutingFilterModulesChain Is Nothing OrElse
+            ForwardFilterModulesChain Is Nothing OrElse
+            InputFilterModulesChain Is Nothing OrElse
+            OutputFilterModulesChain Is Nothing OrElse
+            PostroutingFilterModulesChain Is Nothing Then
+
+            Me.Stop()
+            Exit Sub
+
+        End If
+
         winptablesDeviceHandle = New SafeFileHandle(CreateFile(WINPTABLES_DEVICE_NAME,
                                                                FileAccess.ReadWrite,
                                                                FileShare.None,
@@ -46,13 +64,6 @@ Public Class WinptablesService
             Exit Sub
         End If
 
-        'Get saved data from windows registry
-        PreroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.PREROUTING)
-        ForwardFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.FORWARD)
-        InputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.INPUT)
-        OutputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.OUTPUT)
-        PostroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.POSTROUTING)
-
         deviceStream = New FileStream(winptablesDeviceHandle, FileAccess.ReadWrite, 65536, True)
         deviceStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), deviceStream)
 
@@ -62,6 +73,8 @@ Public Class WinptablesService
     Private Sub readFromWinptablesDevice(ar As IAsyncResult)
         Dim dStream As FileStream = ar.AsyncState
         Dim readLength As Integer = dStream.EndRead(ar)
+        dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
+
         If readLength > 0 Then
 
             If (buffer(0) = 0) Then
@@ -72,8 +85,6 @@ Public Class WinptablesService
 
             dStream.Write(buffer, 0, buffer.Length)
         End If
-
-        dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
 
     End Sub
 

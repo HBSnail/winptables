@@ -18,7 +18,10 @@ Public Class RegistryUtils
     End Enum
 
     Public Structure FilterModulesInfo
-        Public priority As UInteger
+        'Priority type here is set to LONG(64bit) mismatch the priority type UINT(32bit) from functions
+        'because we do not want to convert the type when comparing 2 FilterModulesInfo,
+        'otherwise we need convert type there to avoid overflow.
+        Public priority As Long
         Public modulePath As String
 
         Public Sub New(p As UInteger, m As Object)
@@ -27,6 +30,9 @@ Public Class RegistryUtils
         End Sub
     End Structure
 
+    Private Shared Function FilterModulesCompare(x As FilterModulesInfo, y As FilterModulesInfo) As Integer
+        Return (x.priority - y.priority)
+    End Function
 
     'NOTICE: The keys will store in "Computer\HKEY_LOCAL_MACHINE\SOFTWARE\icSecLab\winptables"
     'SubKeys -  PREROUTING,FORWARD,INPUT,OUTPUT,POSTROUTING
@@ -48,29 +54,57 @@ Public Class RegistryUtils
 
     End Function
 
+    Public Shared Function OpenOpRegistryKey(filterPoint As FilterPoint)
+        Dim opKey As RegistryKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
+
+        Select Case filterPoint
+            Case FilterPoint.PREROUTING
+                opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
+            Case FilterPoint.INPUT
+                opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
+            Case FilterPoint.FORWARD
+                opKey = opKey.OpenSubKey("FORWARD", RegistryKeyPermissionCheck.ReadWriteSubTree)
+            Case FilterPoint.OUTPUT
+                opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
+            Case FilterPoint.POSTROUTING
+                opKey = opKey.OpenSubKey("POSTROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
+            Case Else
+                Return Nothing
+        End Select
+
+
+        If opKey Is Nothing Then
+            'Create missing keys
+            CreateWinptablesRegistryItems()
+
+            'Try again
+            opKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
+            Select Case filterPoint
+                Case FilterPoint.PREROUTING
+                    opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
+                Case FilterPoint.INPUT
+                    opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
+                Case FilterPoint.FORWARD
+                    opKey = opKey.OpenSubKey("FORWARD", RegistryKeyPermissionCheck.ReadWriteSubTree)
+                Case FilterPoint.OUTPUT
+                    opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
+                Case FilterPoint.POSTROUTING
+                    opKey = opKey.OpenSubKey("POSTROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
+                Case Else
+                    Return Nothing
+            End Select
+
+        End If
+
+        Return opKey
+    End Function
+
     'NOTICE:    Larger priority in number is in lower priority.
     '           It indecates the order for the filter link list.
     Public Shared Function WriteWinptablesRegistryItems(filterPoint As FilterPoint, priority As UInteger, modulePath As String) As Boolean
 
         Try
-
-            Dim winptablesKey As RegistryKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
-
-            Select Case filterPoint
-                Case FilterPoint.PREROUTING
-                    winptablesKey.OpenSubKey("PREROUTING").SetValue(priority.ToString, modulePath, RegistryValueKind.String)
-                Case FilterPoint.INPUT
-                    winptablesKey.OpenSubKey("INPUT").SetValue(priority.ToString, modulePath, RegistryValueKind.String)
-                Case FilterPoint.FORWARD
-                    winptablesKey.OpenSubKey("FORWARD").SetValue(priority.ToString, modulePath, RegistryValueKind.String)
-                Case FilterPoint.OUTPUT
-                    winptablesKey.OpenSubKey("OUTPUT").SetValue(priority.ToString, modulePath, RegistryValueKind.String)
-                Case FilterPoint.POSTROUTING
-                    winptablesKey.OpenSubKey("POSTROUTING").SetValue(priority.ToString, modulePath, RegistryValueKind.String)
-                Case Else
-                    Return False
-            End Select
-
+            OpenOpRegistryKey(filterPoint).SetValue(priority.ToString, modulePath, RegistryValueKind.String)
         Catch
             Return False
         End Try
@@ -82,24 +116,7 @@ Public Class RegistryUtils
     Public Shared Function DeleteWinptablesRegistryItems(filterPoint As FilterPoint, priority As UInteger) As Boolean
 
         Try
-
-            Dim winptablesKey As RegistryKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
-
-            Select Case filterPoint
-                Case FilterPoint.PREROUTING
-                    winptablesKey.OpenSubKey("PREROUTING").DeleteValue(priority.ToString, False)
-                Case FilterPoint.INPUT
-                    winptablesKey.OpenSubKey("INPUT").DeleteValue(priority.ToString, False)
-                Case FilterPoint.FORWARD
-                    winptablesKey.OpenSubKey("FORWARD").DeleteValue(priority.ToString, False)
-                Case FilterPoint.OUTPUT
-                    winptablesKey.OpenSubKey("OUTPUT").DeleteValue(priority.ToString, False)
-                Case FilterPoint.POSTROUTING
-                    winptablesKey.OpenSubKey("POSTROUTING").DeleteValue(priority.ToString, False)
-                Case Else
-                    Return False
-            End Select
-
+            OpenOpRegistryKey(filterPoint).DeleteValue(priority.ToString, False)
         Catch
             Return False
         End Try
@@ -113,22 +130,7 @@ Public Class RegistryUtils
 
         Try
 
-            Dim opKey As RegistryKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
-
-            Select Case filterPoint
-                Case FilterPoint.PREROUTING
-                    opKey = opKey.OpenSubKey("PREROUTING")
-                Case FilterPoint.INPUT
-                    opKey = opKey.OpenSubKey("INPUT")
-                Case FilterPoint.FORWARD
-                    opKey = opKey.OpenSubKey("FORWARD")
-                Case FilterPoint.OUTPUT
-                    opKey = opKey.OpenSubKey("OUTPUT")
-                Case FilterPoint.POSTROUTING
-                    opKey = opKey.OpenSubKey("POSTROUTING")
-                Case Else
-                    Return Nothing
-            End Select
+            Dim opKey As RegistryKey = OpenOpRegistryKey(filterPoint)
 
             filterChain = New List(Of FilterModulesInfo)
 
@@ -136,7 +138,7 @@ Public Class RegistryUtils
                 filterChain.Add(New FilterModulesInfo(CUInt(i), opKey.GetValue(i)))
             Next
 
-            filterChain.Sort()
+            filterChain.Sort(New Comparison(Of FilterModulesInfo)(AddressOf FilterModulesCompare))
 
         Catch
             Return Nothing
@@ -146,28 +148,14 @@ Public Class RegistryUtils
     End Function
 
     Public Shared Function WriteWinptablesFilteringChain(filterPoint As FilterPoint, chain As List(Of FilterModulesInfo)) As Boolean
+
         Try
 
-            Dim opKey As RegistryKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
-
-            Select Case filterPoint
-                Case FilterPoint.PREROUTING
-                    opKey = opKey.OpenSubKey("PREROUTING")
-                Case FilterPoint.INPUT
-                    opKey = opKey.OpenSubKey("INPUT")
-                Case FilterPoint.FORWARD
-                    opKey = opKey.OpenSubKey("FORWARD")
-                Case FilterPoint.OUTPUT
-                    opKey = opKey.OpenSubKey("OUTPUT")
-                Case FilterPoint.POSTROUTING
-                    opKey = opKey.OpenSubKey("POSTROUTING")
-                Case Else
-                    Return False
-            End Select
+            Dim opKey As RegistryKey = OpenOpRegistryKey(filterPoint)
 
 
             For Each i As FilterModulesInfo In chain
-                opKey.SetValue(i.priority, i.modulePath)
+                opKey.SetValue(i.priority.ToString, i.modulePath.ToString, RegistryValueKind.String)
             Next
 
         Catch
