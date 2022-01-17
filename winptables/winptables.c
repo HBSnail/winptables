@@ -11,7 +11,6 @@
 #include "winptables_comm_device.h"
 
 
-UINT ndisVersion;
 NDIS_HANDLE filterDriverHandle = NULL;
 NDIS_HANDLE filterDriverObject = NULL;
 NDIS_SPIN_LOCK filterListLock;
@@ -81,14 +80,11 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 
 		//Check the NDIS version
 		//winptables only support NDIS_VERSION >= 6.20(win7&server2008)
-		ndisVersion = NdisGetVersion();
+		UINT ndisVersion = NdisGetVersion();
 		if (ndisVersion < NDIS_RUNTIME_VERSION_620)
 		{
 			status = NDIS_STATUS_UNSUPPORTED_REVISION;
 			break;
-		}
-		else {
-			ndisVersion = NDIS_RUNTIME_VERSION_620;
 		}
 
 		//Prepare the variables used in NDIS filter driver registration

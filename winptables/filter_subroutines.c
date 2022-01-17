@@ -10,7 +10,6 @@
 #include "filter_subroutines.h"
 #include "ring_buffer.h"
 
-extern UINT ndisVersion;
 extern NDIS_HANDLE filterDriverHandle;
 extern NDIS_HANDLE filterDriverObject;
 extern NDIS_SPIN_LOCK filterListLock;
