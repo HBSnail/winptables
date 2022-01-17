@@ -1,6 +1,13 @@
-﻿Imports System.IO
-Imports System.IO.Pipes
+﻿'
+' File Name:		WinptablesService.vb
+' Description:		Entry point for WinptablesService
+' Date:			    2022.1.15
+' Author:			HBSnail
+'
+
+Imports System.IO
 Imports Microsoft.Win32.SafeHandles
+Imports WinptablesService.RegistryUtils
 
 Public Class WinptablesService
 
@@ -11,10 +18,37 @@ Public Class WinptablesService
 
     Public Const WINPTABLES_DEVICE_NAME As String = "\\.\winptables_comm"
 
+    Public PreroutingFilterModulesChain As List(Of FilterModulesInfo)
+    Public ForwardFilterModulesChain As List(Of FilterModulesInfo)
+    Public InputFilterModulesChain As List(Of FilterModulesInfo)
+    Public OutputFilterModulesChain As List(Of FilterModulesInfo)
+    Public PostroutingFilterModulesChain As List(Of FilterModulesInfo)
 
     Protected Overrides Sub OnStart(ByVal args() As String)
-        ' Add code here to start your service. This method should set things
-        ' in motion so your service can do its work.
+
+        'Create necessary registry
+        If Not CreateWinptablesRegistryItems() Then
+            Me.Stop()
+            Exit Sub
+        End If
+
+        'Get saved data from windows registry
+        PreroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.PREROUTING)
+        ForwardFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.FORWARD)
+        InputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.INPUT)
+        OutputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.OUTPUT)
+        PostroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.POSTROUTING)
+
+        If PreroutingFilterModulesChain Is Nothing OrElse
+            ForwardFilterModulesChain Is Nothing OrElse
+            InputFilterModulesChain Is Nothing OrElse
+            OutputFilterModulesChain Is Nothing OrElse
+            PostroutingFilterModulesChain Is Nothing Then
+
+            Me.Stop()
+            Exit Sub
+
+        End If
 
         winptablesDeviceHandle = New SafeFileHandle(CreateFile(WINPTABLES_DEVICE_NAME,
                                                                FileAccess.ReadWrite,
@@ -30,7 +64,6 @@ Public Class WinptablesService
             Exit Sub
         End If
 
-
         deviceStream = New FileStream(winptablesDeviceHandle, FileAccess.ReadWrite, 65536, True)
         deviceStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), deviceStream)
 
@@ -40,6 +73,8 @@ Public Class WinptablesService
     Private Sub readFromWinptablesDevice(ar As IAsyncResult)
         Dim dStream As FileStream = ar.AsyncState
         Dim readLength As Integer = dStream.EndRead(ar)
+        dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
+
         If readLength > 0 Then
 
             If (buffer(0) = 0) Then
@@ -50,8 +85,6 @@ Public Class WinptablesService
 
             dStream.Write(buffer, 0, buffer.Length)
         End If
-
-        dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
 
     End Sub
 

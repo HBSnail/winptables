@@ -99,6 +99,7 @@
     <Compile Include="ProjectInstaller.vb">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="RegistryUtils.vb" />
     <Compile Include="WinptablesService.vb">
       <SubType>Component</SubType>
     </Compile>
