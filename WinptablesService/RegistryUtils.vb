@@ -11,7 +11,6 @@ Public Class RegistryUtils
 
     Public Enum FilterPoint As Byte
         PREROUTING
-        FORWARD
         INPUT
         OUTPUT
         POSTROUTING
@@ -23,10 +22,42 @@ Public Class RegistryUtils
         'otherwise we need convert type there to avoid overflow.
         Public priority As Long
         Public modulePath As String
+        Public processLib As Object
 
-        Public Sub New(p As UInteger, m As Object)
+        Public Sub New(p As UInteger, m As String)
+
             priority = p
             modulePath = m
+            processLib = Nothing
+
+            Try
+
+                If ModuleList.ContainsKey(m) Then
+                    processLib = ModuleList(m)
+                    Return
+                End If
+
+                Dim targetT As Type = Nothing
+                Dim asm As Reflection.Assembly = Reflection.Assembly.LoadFile(m)
+                For Each T As Type In asm.GetTypes()
+                    If T.Name = "WinptablesFilterModule" Then
+                        targetT = T
+                        Exit For
+                    End If
+                Next
+
+                If targetT IsNot Nothing Then
+                    Dim targetObj As Object = asm.CreateInstance(targetT.FullName)
+                    Dim mount As Boolean = targetT.GetMethod("WinptablesModuleCreate").Invoke(targetObj, Nothing)
+                    If mount Then
+                        processLib = targetObj
+                        ModuleList.Add(m, targetObj)
+                    Else
+                        targetT.GetMethod("WinptablesModuleDestory").Invoke(targetObj, Nothing)
+                    End If
+                End If
+            Catch
+            End Try
         End Sub
     End Structure
 
@@ -35,14 +66,13 @@ Public Class RegistryUtils
     End Function
 
     'NOTICE: The keys will store in "Computer\HKEY_LOCAL_MACHINE\SOFTWARE\icSecLab\winptables"
-    'SubKeys -  PREROUTING,FORWARD,INPUT,OUTPUT,POSTROUTING
+    'SubKeys -  PREROUTING,INPUT,OUTPUT,POSTROUTING
     '           5 filtering points module lists config
     Public Shared Function CreateWinptablesRegistryItems() As Boolean
 
         Try
             Dim winptablesKey As RegistryKey = Registry.LocalMachine.CreateSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
             winptablesKey.CreateSubKey("PREROUTING")
-            winptablesKey.CreateSubKey("FORWARD")
             winptablesKey.CreateSubKey("INPUT")
             winptablesKey.CreateSubKey("OUTPUT")
             winptablesKey.CreateSubKey("POSTROUTING")
@@ -62,8 +92,6 @@ Public Class RegistryUtils
                 opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.INPUT
                 opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
-            Case FilterPoint.FORWARD
-                opKey = opKey.OpenSubKey("FORWARD", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.OUTPUT
                 opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.POSTROUTING
@@ -84,8 +112,6 @@ Public Class RegistryUtils
                     opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.INPUT
                     opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
-                Case FilterPoint.FORWARD
-                    opKey = opKey.OpenSubKey("FORWARD", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.OUTPUT
                     opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.POSTROUTING
@@ -135,7 +161,11 @@ Public Class RegistryUtils
             filterChain = New List(Of FilterModulesInfo)
 
             For Each i As String In opKey.GetValueNames()
-                filterChain.Add(New FilterModulesInfo(CUInt(i), opKey.GetValue(i)))
+                Dim filterPointInfo As FilterModulesInfo = New FilterModulesInfo(CUInt(i), opKey.GetValue(i))
+                If filterPointInfo.processLib IsNot Nothing Then
+                    filterChain.Add(filterPointInfo)
+                End If
+
             Next
 
             filterChain.Sort(New Comparison(Of FilterModulesInfo)(AddressOf FilterModulesCompare))
@@ -152,7 +182,6 @@ Public Class RegistryUtils
         Try
 
             Dim opKey As RegistryKey = OpenOpRegistryKey(filterPoint)
-
 
             For Each i As FilterModulesInfo In chain
                 opKey.SetValue(i.priority.ToString, i.modulePath.ToString, RegistryValueKind.String)

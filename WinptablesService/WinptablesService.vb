@@ -18,12 +18,6 @@ Public Class WinptablesService
 
     Public Const WINPTABLES_DEVICE_NAME As String = "\\.\winptables_comm"
 
-    Public PreroutingFilterModulesChain As List(Of FilterModulesInfo)
-    Public ForwardFilterModulesChain As List(Of FilterModulesInfo)
-    Public InputFilterModulesChain As List(Of FilterModulesInfo)
-    Public OutputFilterModulesChain As List(Of FilterModulesInfo)
-    Public PostroutingFilterModulesChain As List(Of FilterModulesInfo)
-
     Protected Overrides Sub OnStart(ByVal args() As String)
 
         'Create necessary registry
@@ -33,22 +27,10 @@ Public Class WinptablesService
         End If
 
         'Get saved data from windows registry
-        PreroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.PREROUTING)
-        ForwardFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.FORWARD)
-        InputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.INPUT)
-        OutputFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.OUTPUT)
-        PostroutingFilterModulesChain = ReadWinptablesFilteringChain(FilterPoint.POSTROUTING)
-
-        If PreroutingFilterModulesChain Is Nothing OrElse
-            ForwardFilterModulesChain Is Nothing OrElse
-            InputFilterModulesChain Is Nothing OrElse
-            OutputFilterModulesChain Is Nothing OrElse
-            PostroutingFilterModulesChain Is Nothing Then
-
-            Me.Stop()
+        If Not fpMgr.InitManager() Then
             Exit Sub
-
         End If
+
 
         winptablesDeviceHandle = New SafeFileHandle(CreateFile(WINPTABLES_DEVICE_NAME,
                                                                FileAccess.ReadWrite,
@@ -70,21 +52,92 @@ Public Class WinptablesService
 
     End Sub
 
+
     Private Sub readFromWinptablesDevice(ar As IAsyncResult)
         Dim dStream As FileStream = ar.AsyncState
         Dim readLength As Integer = dStream.EndRead(ar)
-        dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
 
-        If readLength > 0 Then
 
-            If (buffer(0) = 0) Then
-                buffer(0) = 1
-            Else
-                buffer(0) = 3
-            End If
+        If readLength > 9 Then '1Byte 2Uint and data 
 
-            dStream.Write(buffer, 0, buffer.Length)
+            Do
+
+                Dim direction As Byte = buffer(0)
+                Dim ifIndex As UInteger = BitConverter.ToUInt32(buffer, 1)
+                Dim ethframeLength As UInteger = BitConverter.ToUInt32(buffer, 5)
+                Dim ethFrameBuffer(ethframeLength - 1) As Byte
+                Array.Copy(buffer, 9, ethFrameBuffer, 0, ethframeLength)
+
+                'Before receive we must finish copied the data to processBuffer or we will lost the data
+                dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
+
+
+                If (direction = TRANSFER_DIRECION.NICToFilter) Then
+
+                    'PREROUTING
+                    ethFrameBuffer = fpMgr.ProcessPrerouting(ethFrameBuffer)
+
+                    'INPUT
+                    ethFrameBuffer = fpMgr.ProcessInput(ethFrameBuffer)
+
+                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex, dStream)
+
+
+                ElseIf (direction = TRANSFER_DIRECION.UpperToFilter) Then
+
+                    'First call OUTPUT and then POSTROUTING
+                    'PACKETS() = ProcessOUTPUT(Packet)
+                    'PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
+                    'TRANSMIT2NIC(PACKETS)
+
+                    'OUTPUT
+                    ethFrameBuffer = fpMgr.ProcessOutput(ethFrameBuffer)
+
+                    'POSTROUTING
+                    ethFrameBuffer = fpMgr.ProcessPostrouting(ethFrameBuffer)
+
+                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex, dStream)
+
+                Else
+                    'Not a valid TRANSFER_DIRECION.
+                    'Just drop this packet - skip transmit to winptables kernel driver process.
+                    Exit Do
+                End If
+
+            Loop While False
+
         End If
+
+
+    End Sub
+
+    Private Sub SendEthFarmes2Kernel(ethFrames As Byte(), direction As TRANSFER_DIRECION, ifIndex As UInteger, dStream As FileStream)
+
+        'One of the filter module return NULL exit (Drop)
+        If ethFrames Is Nothing Then
+            Return
+        End If
+
+
+        If direction = TRANSFER_DIRECION.NICToFilter OrElse direction = TRANSFER_DIRECION.UpperToFilter Then
+            Return
+        End If
+
+        Dim sendBuffer(ethFrames.Length - 1 + 9) As Byte
+        sendBuffer(0) = direction
+        sendBuffer(1) = ifIndex And &HFF
+        sendBuffer(1 + 1) = (ifIndex >> 8) And &HFF
+        sendBuffer(1 + 2) = (ifIndex >> 16) And &HFF
+        sendBuffer(1 + 3) = (ifIndex >> 24) And &HFF
+
+        sendBuffer(5) = ethFrames.Length And &HFF
+        sendBuffer(5 + 1) = (ethFrames.Length >> 8) And &HFF
+        sendBuffer(5 + 2) = (ethFrames.Length >> 16) And &HFF
+        sendBuffer(5 + 3) = (ethFrames.Length >> 24) And &HFF
+
+        Array.Copy(ethFrames, 0, sendBuffer, 9, ethFrames.Length)
+
+        dStream.Write(sendBuffer, 0, sendBuffer.Length)
 
     End Sub
 

@@ -101,6 +101,9 @@ NTSTATUS WPTCommDeviceWrite(DEVICE_OBJECT* deviceObject, IRP* irp) {
 		NdisMoveMemory(&interfaceIndex, kernelAddr + sizeof(BYTE), sizeof(ULONG));
 		NdisMoveMemory(&ethLength, kernelAddr + sizeof(BYTE) + sizeof(ULONG), sizeof(UINT));
 		FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
+		if (fContext == NULL) {
+			break;
+		}
 		TransmitEthPacket(fContext, ethLength, kernelAddr + sizeof(BYTE) + sizeof(ULONG) + sizeof(UINT), direction, NO_FLAG);
 		irp->IoStatus.Information = sizeof(BYTE) + sizeof(ULONG), sizeof(UINT) + ethLength;
 
