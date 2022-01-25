@@ -9,13 +9,6 @@ Imports Microsoft.Win32
 
 Public Class RegistryUtils
 
-    Public Enum FilterPoint As Byte
-        PREROUTING
-        INPUT
-        OUTPUT
-        POSTROUTING
-    End Enum
-
     Public Structure FilterModulesInfo
         'Priority type here is set to LONG(64bit) mismatch the priority type UINT(32bit) from functions
         'because we do not want to convert the type when comparing 2 FilterModulesInfo,
@@ -61,7 +54,7 @@ Public Class RegistryUtils
         End Sub
     End Structure
 
-    Private Shared Function FilterModulesCompare(x As FilterModulesInfo, y As FilterModulesInfo) As Integer
+    Public Shared Function FilterModulesCompare(x As FilterModulesInfo, y As FilterModulesInfo) As Integer
         Return (x.priority - y.priority)
     End Function
 
@@ -73,6 +66,7 @@ Public Class RegistryUtils
         Try
             Dim winptablesKey As RegistryKey = Registry.LocalMachine.CreateSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
             winptablesKey.CreateSubKey("PREROUTING")
+            winptablesKey.CreateSubKey("FORWARD")
             winptablesKey.CreateSubKey("INPUT")
             winptablesKey.CreateSubKey("OUTPUT")
             winptablesKey.CreateSubKey("POSTROUTING")
@@ -92,6 +86,8 @@ Public Class RegistryUtils
                 opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.INPUT
                 opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
+            Case FilterPoint.FORWARD
+                opKey = opKey.OpenSubKey("FORWARD", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.OUTPUT
                 opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.POSTROUTING
@@ -112,6 +108,8 @@ Public Class RegistryUtils
                     opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.INPUT
                     opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
+                Case FilterPoint.FORWARD
+                    opKey = opKey.OpenSubKey("FORWARD", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.OUTPUT
                     opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.POSTROUTING
@@ -183,6 +181,7 @@ Public Class RegistryUtils
 
             Dim opKey As RegistryKey = OpenOpRegistryKey(filterPoint)
 
+
             For Each i As FilterModulesInfo In chain
                 opKey.SetValue(i.priority.ToString, i.modulePath.ToString, RegistryValueKind.String)
             Next
@@ -196,4 +195,3 @@ Public Class RegistryUtils
     End Function
 
 End Class
-

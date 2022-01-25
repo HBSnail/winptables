@@ -1,7 +1,7 @@
 ﻿Imports System.IO
 Imports System.Runtime.InteropServices
 
-Module Win32API
+Public Module Win32API
     Public Enum FileAttributesAndFlags
         Attribute_Archive = &H20
         Attribute_Encrypted = &H4000
