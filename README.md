@@ -9,7 +9,7 @@
 
 > Notice:The other language versions document may not be updated in time. When inconsistent, the Chinese version document shall prevail. 
 
-Winptables全称Windows Packet Tables，是一款面向windows平台打造的轻量级包过滤防火墙框架。可以通过本框架轻松的实现网络数据包过滤，路由转发，NAT，网络审计等多种功能。
+Winptables全称Windows Packet Tables，是一款面向windows平台打造的轻量级包过滤防火墙框架。可以通过本框架轻松的实现网络数据包过滤，网络审计等多种功能。
 
 
 ## 工作原理
@@ -33,5 +33,4 @@ Winptables全称Windows Packet Tables，是一款面向windows平台打造的轻
 #### 官方插件（会动态更新添加）
 
 - [ ] 待开发：linux iptables兼容层模块。
-- [ ] 待开发：NAT转发模块。
 

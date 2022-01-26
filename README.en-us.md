@@ -7,7 +7,7 @@
 
 > Notice:The other language versions document may not be updated in time. When inconsistent, the Chinese version document shall prevail. 
 
-Winptables is also called Windows Packet Tables. A lightweight packet filtering firewall framework for windows platform. It can be used in network packet filtering, routing, NAT, network auditing and others.
+Winptables is also called Windows Packet Tables. A lightweight packet filtering firewall framework for windows platform. It can be used in network packet filtering, network auditing and others.
 
 
 ## How it works
@@ -31,5 +31,3 @@ Winptables consists of two parts, Winptables NDIS Driver and WinptablesService.W
 #### Official modules
 
 - [ ] linux iptables compatible layer modules. 
-- [ ] NAT modules。
-
