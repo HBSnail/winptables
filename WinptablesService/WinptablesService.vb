@@ -74,8 +74,6 @@ Public Class WinptablesService
 
                 If (direction = TRANSFER_DIRECION.NICToFilter) Then
 
-                    'PREROUTING
-                    ethFrameBuffer = fpMgr.ProcessPrerouting(ethFrameBuffer)
 
                     'INPUT
                     ethFrameBuffer = fpMgr.ProcessInput(ethFrameBuffer)
@@ -85,16 +83,12 @@ Public Class WinptablesService
 
                 ElseIf (direction = TRANSFER_DIRECION.UpperToFilter) Then
 
-                    'First call OUTPUT and then POSTROUTING
+                    'Call OUTPUT 
                     'PACKETS() = ProcessOUTPUT(Packet)
-                    'PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
                     'TRANSMIT2NIC(PACKETS)
 
                     'OUTPUT
                     ethFrameBuffer = fpMgr.ProcessOutput(ethFrameBuffer)
-
-                    'POSTROUTING
-                    ethFrameBuffer = fpMgr.ProcessPostrouting(ethFrameBuffer)
 
                     SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex, dStream)
 

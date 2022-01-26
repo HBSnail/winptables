@@ -9,12 +9,7 @@ Imports Microsoft.Win32
 
 Public Class RegistryUtils
 
-    Public Enum FilterPoint As Byte
-        PREROUTING
-        INPUT
-        OUTPUT
-        POSTROUTING
-    End Enum
+  
 
     Public Structure FilterModulesInfo
         'Priority type here is set to LONG(64bit) mismatch the priority type UINT(32bit) from functions
@@ -66,16 +61,13 @@ Public Class RegistryUtils
     End Function
 
     'NOTICE: The keys will store in "Computer\HKEY_LOCAL_MACHINE\SOFTWARE\icSecLab\winptables"
-    'SubKeys -  PREROUTING,INPUT,OUTPUT,POSTROUTING
-    '           5 filtering points module lists config
+
     Public Shared Function CreateWinptablesRegistryItems() As Boolean
 
         Try
             Dim winptablesKey As RegistryKey = Registry.LocalMachine.CreateSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
-            winptablesKey.CreateSubKey("PREROUTING")
             winptablesKey.CreateSubKey("INPUT")
             winptablesKey.CreateSubKey("OUTPUT")
-            winptablesKey.CreateSubKey("POSTROUTING")
         Catch
             Return False
         End Try
@@ -88,14 +80,10 @@ Public Class RegistryUtils
         Dim opKey As RegistryKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
 
         Select Case filterPoint
-            Case FilterPoint.PREROUTING
-                opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.INPUT
                 opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case FilterPoint.OUTPUT
                 opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
-            Case FilterPoint.POSTROUTING
-                opKey = opKey.OpenSubKey("POSTROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Case Else
                 Return Nothing
         End Select
@@ -108,14 +96,10 @@ Public Class RegistryUtils
             'Try again
             opKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\icSecLab\winptables", RegistryKeyPermissionCheck.ReadWriteSubTree)
             Select Case filterPoint
-                Case FilterPoint.PREROUTING
-                    opKey = opKey.OpenSubKey("PREROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.INPUT
                     opKey = opKey.OpenSubKey("INPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case FilterPoint.OUTPUT
                     opKey = opKey.OpenSubKey("OUTPUT", RegistryKeyPermissionCheck.ReadWriteSubTree)
-                Case FilterPoint.POSTROUTING
-                    opKey = opKey.OpenSubKey("POSTROUTING", RegistryKeyPermissionCheck.ReadWriteSubTree)
                 Case Else
                     Return Nothing
             End Select
