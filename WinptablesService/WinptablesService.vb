@@ -6,6 +6,7 @@
 '
 
 Imports System.IO
+Imports System.Net.NetworkInformation
 Imports Microsoft.Win32.SafeHandles
 Imports WinptablesService.RegistryUtils
 
@@ -71,68 +72,127 @@ Public Class WinptablesService
                 dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
 
 
-                If (direction = TRANSFER_DIRECION.NICToFilter) Then
+                Try
+                    If (direction = TRANSFER_DIRECION.NICToFilter) Then
 
-                    'PREROUTING
-                    ethFrameBuffer = fpMgr.ProcessPrerouting(ethFrameBuffer)
+                        'PREROUTING
+                        ethFrameBuffer = fpMgr.ProcessPrerouting(ethFrameBuffer)
 
 
-                    'If the direction is match to the host process the INPUT,otherwise
-                    'check IF THE FORWARD ENABLE and call FORWARD AND POSTROUTING
-                    '
-                    '
-                    'The code may be like this:
-                    '
-                    'If IP.DEST = LOCAL Then
-                    '   PACKETS() = ProcessINPUT(Packet)
-                    '   TRANSMIT2UPPER(PACKETS())
-                    'Else
-                    '   If FORWARD_ENABLE Then
-                    '       PACKETS() = ProcessFORWARD(Packet)
-                    '       PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
-                    '       TRANSMIT2NIC(PACKETS())
-                    '   Else
-                    '       'Just drop this packet - skip transmit to winptables kernel driver process.
-                    '       Exit Do
-                    '   End If
-                    'End IF
+                        'If the direction is match to the host process the INPUT,otherwise
+                        'check IF THE FORWARD ENABLE and call FORWARD AND POSTROUTING
+                        '
+                        '
+                        'The code may be like this:
+                        '
+                        'If IP.DEST = LOCAL Then
+                        '   PACKETS() = ProcessINPUT(Packet)
+                        '   TRANSMIT2UPPER(PACKETS())
+                        'Else
+                        '   If FORWARD_ENABLE Then
+                        '       PACKETS() = ProcessFORWARD(Packet)
+                        '       PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
+                        '       TRANSMIT2NIC(PACKETS())
+                        '   Else
+                        '       'Just drop this packet - skip transmit to winptables kernel driver process.
+                        '       Exit Do
+                        '   End If
+                        'End IF
 
-                    'Resolve the ethFrame is in DIX Ethernet V2 Frame (Ethernet II)
-                    'In experiment we never see any IEEE802.3 Ethernet frame on our windows machine
-                    'DIXv2 Ethernet
-                    'SrcMAC-6byte|DstMAC-6Byte|TypeCode-2Byte|Payload|FCS-4Byte
-                    'Before the frame was captured by our filter driver, the NIC will chech FCS and we will not get it(DO NOT CARE)
-                    '
-                    'NOTICE: All data in network is transfered in BIG ENDIAN so we need convert first.
+                        'Resolve the ethFrame is in DIX Ethernet V2 Frame (Ethernet II)
+                        'In experiment we never see any IEEE802.3 Ethernet frame on our windows machine
+                        'DIXv2 Ethernet
+                        'SrcMAC-6byte|DstMAC-6Byte|TypeCode-2Byte|Payload|FCS-4Byte
+                        'Before the frame was captured by our filter driver, the NIC will chech FCS and we will not get it(DO NOT CARE)
+                        '
+                        'NOTICE: All data in network is transfered in BIG ENDIAN so we need convert first.
 
-                    Dim currentEthFrameTypeCode As EthernetTypeCode = BytesOperator.GetBigEndianUShort(ethFrameBuffer, 12)
-                    Dim dstAddrNotLocal As Boolean = False
+                        Dim currentEthFrameTypeCode As ETHERNET_TYPE_CODE = BytesOperator.GetBigEndianUShort(ethFrameBuffer, 12)
+                        Dim dstAddr As DST_ADDR_TYPE = DST_ADDR_TYPE.LOCAL
 
-                    'We can only forward the IPv4&IPv6 packets
-                    If currentEthFrameTypeCode = EthernetTypeCode.IP Then
+                        'We can only forward the IPv4&IPv6 packets
+                        If currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IP And (ethFrameBuffer(14) >> 4) = 4 Then
+                            'Resolve as IPv4 Packet (RFC791)
+                            If Not fpMgr.IsLocalIfIPAddr(ifIndex, {ethFrameBuffer(30), ethFrameBuffer(31), ethFrameBuffer(32), ethFrameBuffer(33)}) Then
+                                dstAddr = DST_ADDR_TYPE.NOT_LOCAL
+                            End If
 
-                        'Resolve as IPv4 Packet (RFC791)
-                        If Not fpMgr.IsLocalIfIPAddr(ifIndex, {ethFrameBuffer(30), ethFrameBuffer(31), ethFrameBuffer(32), ethFrameBuffer(33)}) Then
-                            dstAddrNotLocal = True
+                        ElseIf currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IPv6 And (ethFrameBuffer(14) >> 4) = 6 Then
+                            'Resolve as IPv6 Packet (RFC2460)
+                            If Not fpMgr.IsLocalIfIPAddr(ifIndex, {ethFrameBuffer(38), ethFrameBuffer(39), ethFrameBuffer(40), ethFrameBuffer(41),
+                                                             ethFrameBuffer(42), ethFrameBuffer(43), ethFrameBuffer(44), ethFrameBuffer(45),
+                                                             ethFrameBuffer(46), ethFrameBuffer(47), ethFrameBuffer(48), ethFrameBuffer(49),
+                                                             ethFrameBuffer(50), ethFrameBuffer(51), ethFrameBuffer(52), ethFrameBuffer(53)}) Then
+                                dstAddr = DST_ADDR_TYPE.NOT_LOCAL
+                            End If
                         End If
 
-                    ElseIf currentEthFrameTypeCode = EthernetTypeCode.IPv6 Then
 
-                        'Resolve as IPv6 Packet (RFC2460)
-                        If Not fpMgr.IsLocalIfIPAddr(ifIndex, {ethFrameBuffer(38), ethFrameBuffer(39), ethFrameBuffer(40), ethFrameBuffer(41),
-                                                         ethFrameBuffer(42), ethFrameBuffer(43), ethFrameBuffer(44), ethFrameBuffer(45),
-                                                         ethFrameBuffer(46), ethFrameBuffer(47), ethFrameBuffer(48), ethFrameBuffer(49),
-                                                         ethFrameBuffer(50), ethFrameBuffer(51), ethFrameBuffer(52), ethFrameBuffer(53)}) Then
-                            dstAddrNotLocal = True
+                        If (dstAddr <> DST_ADDR_TYPE.LOCAL) And globalForwardEnable Then
+
+
+                            'Clear MAC address in the ethernet frame
+                            'We do not care that
+                            Array.Clear(ethFrameBuffer, 0, 12)
+
+                            'FORWARD
+                            ethFrameBuffer = fpMgr.ProcessForward(ethFrameBuffer)
+
+                            If ethFrameBuffer Is Nothing Then
+                                Exit Do
+                            End If
+
+                            Dim forwardIP As ipAddress
+
+                            currentEthFrameTypeCode = BytesOperator.GetBigEndianUShort(ethFrameBuffer, 12)
+                            'Get new ip addr
+                            If currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IP And (ethFrameBuffer(14) >> 4) = 4 Then
+                                'Resolve as IPv4 Packet (RFC791)
+                                forwardIP = New ipAddress({ethFrameBuffer(30), ethFrameBuffer(31), ethFrameBuffer(32), ethFrameBuffer(33)})
+                            ElseIf currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IPv6 And (ethFrameBuffer(14) >> 4) = 6 Then
+                                'Resolve as IPv6 Packet (RFC2460)
+                                forwardIP = New ipAddress({ethFrameBuffer(38), ethFrameBuffer(39), ethFrameBuffer(40), ethFrameBuffer(41),
+                                                             ethFrameBuffer(42), ethFrameBuffer(43), ethFrameBuffer(44), ethFrameBuffer(45),
+                                                             ethFrameBuffer(46), ethFrameBuffer(47), ethFrameBuffer(48), ethFrameBuffer(49),
+                                                             ethFrameBuffer(50), ethFrameBuffer(51), ethFrameBuffer(52), ethFrameBuffer(53)})
+                            End If
+
+                            If forwardIP.IPBytes IsNot Nothing Then
+                                'Get currect interface via route table
+                                Dim forwardIf As UInteger = ForwardTable(forwardIP).InterfaceIndex
+                                'Get MAC address from ARP or ND
+                                Dim forwardSrcDstEthernetAddress() As Byte = ForwardTable(forwardIP).EthernetDstSrcAddress
+
+                                Array.Copy(forwardSrcDstEthernetAddress, ethFrameBuffer, 12)
+
+                                'POSTROUTING
+                                ethFrameBuffer = fpMgr.ProcessPostrouting(ethFrameBuffer)
+
+                                SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, forwardIf, dStream)
+
+                            End If
+
+
+
+
+                        Else
+
+                            'INPUT
+                            ethFrameBuffer = fpMgr.ProcessInput(ethFrameBuffer)
+                            SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex, dStream)
+
                         End If
 
-                    End If
 
+                    ElseIf (direction = TRANSFER_DIRECION.UpperToFilter) Then
 
-                    If dstAddrNotLocal And globalForwardEnable Then
+                        'First call OUTPUT and then POSTROUTING
+                        'PACKETS() = ProcessOUTPUT(Packet)
+                        'PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
+                        'TRANSMIT2NIC(PACKETS)
 
-                        'FORWARD
-                        ethFrameBuffer = fpMgr.ProcessForward(ethFrameBuffer)
+                        'OUTPUT
+                        ethFrameBuffer = fpMgr.ProcessOutput(ethFrameBuffer)
 
                         'POSTROUTING
                         ethFrameBuffer = fpMgr.ProcessPostrouting(ethFrameBuffer)
@@ -140,40 +200,13 @@ Public Class WinptablesService
                         SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex, dStream)
 
                     Else
-
-                        'INPUT
-                        ethFrameBuffer = fpMgr.ProcessInput(ethFrameBuffer)
-                        SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex, dStream)
-
+                        'Not a valid TRANSFER_DIRECION.
+                        'Just drop this packet - skip transmit to winptables kernel driver process.
+                        Exit Do
                     End If
-
-
-                ElseIf (direction = TRANSFER_DIRECION.UpperToFilter) Then
-
-                    'First call OUTPUT and then POSTROUTING
-                    'PACKETS() = ProcessOUTPUT(Packet)
-                    'PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
-                    'TRANSMIT2NIC(PACKETS)
-
-                    'OUTPUT
-                    ethFrameBuffer = fpMgr.ProcessOutput(ethFrameBuffer)
-
-                    'POSTROUTING
-                    ethFrameBuffer = fpMgr.ProcessPostrouting(ethFrameBuffer)
-
-                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex, dStream)
-
-                Else
-                    'Not a valid TRANSFER_DIRECION.
-                    'Just drop this packet - skip transmit to winptables kernel driver process.
-                    Exit Do
-                End If
-
-
-
-
+                Catch
+                End Try
             Loop While False
-
         End If
 
 

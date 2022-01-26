@@ -1,4 +1,18 @@
-﻿Public Module WPTGlobal
+﻿Imports System.Collections.Concurrent
+
+Public Module WPTGlobal
+
+
+    Public Structure ForwardTableItem
+        Public InterfaceIndex As UInteger
+        Public EthernetDstSrcAddress() As Byte
+        Public Shared Operator =(a As ForwardTableItem, b As ForwardTableItem) As Boolean
+            Return (BytesOperator.BytesEqual(a.EthernetDstSrcAddress, b.EthernetDstSrcAddress) AndAlso (a.InterfaceIndex = b.InterfaceIndex))
+        End Operator
+        Public Shared Operator <>(a As ForwardTableItem, b As ForwardTableItem) As Boolean
+            Return Not (BytesOperator.BytesEqual(a.EthernetDstSrcAddress, b.EthernetDstSrcAddress) AndAlso (a.InterfaceIndex = b.InterfaceIndex))
+        End Operator
+    End Structure
 
     Public ModuleList As New Dictionary(Of String, Object)
 
@@ -15,7 +29,12 @@
         FilterToNIC
     End Enum
 
-    Public Enum EthernetTypeCode As UInteger
+    Public Enum DST_ADDR_TYPE As Byte
+        LOCAL
+        NOT_LOCAL
+    End Enum
+
+    Public Enum ETHERNET_TYPE_CODE As UInteger
         IP = &H800
         ARP = &H806
         FrameRelayARP = &H808
