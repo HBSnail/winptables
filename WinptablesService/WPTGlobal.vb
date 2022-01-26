@@ -6,6 +6,8 @@
 
     Public fpMgr As New FilterPointsManager()
 
+    Public globalService As WinptablesService
+
     Public Enum FilterPoint As Byte
         INPUT
         OUTPUT

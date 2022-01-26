@@ -19,6 +19,7 @@ Public Class WinptablesService
     Public Const WINPTABLES_DEVICE_NAME As String = "\\.\winptables_comm"
 
     Protected Overrides Sub OnStart(ByVal args() As String)
+        globalService = Me
 
         'Create necessary registry
         If Not CreateWinptablesRegistryItems() Then
@@ -45,6 +46,7 @@ Public Class WinptablesService
             Me.Stop()
             Exit Sub
         End If
+
 
         deviceStream = New FileStream(winptablesDeviceHandle, FileAccess.ReadWrite, 65536, True)
         deviceStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), deviceStream)
@@ -78,7 +80,7 @@ Public Class WinptablesService
                     'INPUT
                     ethFrameBuffer = fpMgr.ProcessInput(ethFrameBuffer)
 
-                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex, dStream)
+                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex)
 
 
                 ElseIf (direction = TRANSFER_DIRECION.UpperToFilter) Then
@@ -90,7 +92,7 @@ Public Class WinptablesService
                     'OUTPUT
                     ethFrameBuffer = fpMgr.ProcessOutput(ethFrameBuffer)
 
-                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex, dStream)
+                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex)
 
                 Else
                     'Not a valid TRANSFER_DIRECION.
@@ -105,7 +107,7 @@ Public Class WinptablesService
 
     End Sub
 
-    Private Sub SendEthFarmes2Kernel(ethFrames As Byte(), direction As TRANSFER_DIRECION, ifIndex As UInteger, dStream As FileStream)
+    Public Sub SendEthFarmes2Kernel(ethFrames As Byte(), direction As TRANSFER_DIRECION, ifIndex As UInteger)
 
         'One of the filter module return NULL exit (Drop)
         If ethFrames Is Nothing Then
@@ -131,7 +133,7 @@ Public Class WinptablesService
 
         Array.Copy(ethFrames, 0, sendBuffer, 9, ethFrames.Length)
 
-        dStream.Write(sendBuffer, 0, sendBuffer.Length)
+        deviceStream.Write(sendBuffer, 0, sendBuffer.Length)
 
     End Sub
 

@@ -43,7 +43,7 @@ Public Class RegistryUtils
 
                 If targetT IsNot Nothing Then
                     Dim targetObj As Object = asm.CreateInstance(targetT.FullName)
-                    Dim mount As Boolean = targetT.GetMethod("WinptablesModuleCreate").Invoke(targetObj, Nothing)
+                    Dim mount As Boolean = targetT.GetMethod("WinptablesModuleCreate").Invoke(targetObj, {globalService})
                     If mount Then
                         processLib = targetObj
                         ModuleList.Add(m, targetObj)
