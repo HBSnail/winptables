@@ -6,7 +6,8 @@
 '
 
 Imports System.IO
-Imports System.Net.NetworkInformation
+Imports System.Net
+Imports System.Runtime.InteropServices
 Imports Microsoft.Win32.SafeHandles
 Imports WinptablesService.RegistryUtils
 
@@ -19,7 +20,14 @@ Public Class WinptablesService
 
     Public Const WINPTABLES_DEVICE_NAME As String = "\\.\winptables_comm"
 
+    Public filterpointMgr As New FilterPointsManager()
+    Public routingMgr As New RoutingManager()
+    Public pack As Long = 0
+
+
     Protected Overrides Sub OnStart(ByVal args() As String)
+
+        globalService = Me
 
         'Create necessary registry
         If Not CreateWinptablesRegistryItems() Then
@@ -28,7 +36,7 @@ Public Class WinptablesService
         End If
 
         'Get saved data from windows registry
-        If Not fpMgr.InitManager() Then
+        If Not filterpointMgr.InitManager() Then
             Exit Sub
         End If
 
@@ -60,158 +68,162 @@ Public Class WinptablesService
 
         If readLength > 9 Then '1Byte 2Uint and data 
 
-            Do
 
-                Dim direction As Byte = buffer(0)
-                Dim ifIndex As UInteger = BitConverter.ToUInt32(buffer, 1)
-                Dim ethframeLength As UInteger = BitConverter.ToUInt32(buffer, 5)
-                Dim ethFrameBuffer(ethframeLength - 1) As Byte
-                Array.Copy(buffer, 9, ethFrameBuffer, 0, ethframeLength)
+            Dim direction As Byte = buffer(0)
+            Dim ifIndex As UInteger = BitConverter.ToUInt32(buffer, 1)
+            Dim ethframeLength As UInteger = BitConverter.ToUInt32(buffer, 5)
+            Dim ethFrameBuffer(ethframeLength - 1) As Byte
+            Array.Copy(buffer, 9, ethFrameBuffer, 0, ethframeLength)
+            pack += 1
 
-                'Before receive we must finish copied the data to processBuffer or we will lost the data
-                dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
+            'Before receive we must finish copied the data to processBuffer or we will lost the data
+            dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
 
+            ProcessEthFrame(ethFrameBuffer, direction, ifIndex)
 
-                Try
-                    If (direction = TRANSFER_DIRECION.NICToFilter) Then
-
-                        'PREROUTING
-                        ethFrameBuffer = fpMgr.ProcessPrerouting(ethFrameBuffer)
-
-
-                        'If the direction is match to the host process the INPUT,otherwise
-                        'check IF THE FORWARD ENABLE and call FORWARD AND POSTROUTING
-                        '
-                        '
-                        'The code may be like this:
-                        '
-                        'If IP.DEST = LOCAL Then
-                        '   PACKETS() = ProcessINPUT(Packet)
-                        '   TRANSMIT2UPPER(PACKETS())
-                        'Else
-                        '   If FORWARD_ENABLE Then
-                        '       PACKETS() = ProcessFORWARD(Packet)
-                        '       PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
-                        '       TRANSMIT2NIC(PACKETS())
-                        '   Else
-                        '       'Just drop this packet - skip transmit to winptables kernel driver process.
-                        '       Exit Do
-                        '   End If
-                        'End IF
-
-                        'Resolve the ethFrame is in DIX Ethernet V2 Frame (Ethernet II)
-                        'In experiment we never see any IEEE802.3 Ethernet frame on our windows machine
-                        'DIXv2 Ethernet
-                        'SrcMAC-6byte|DstMAC-6Byte|TypeCode-2Byte|Payload|FCS-4Byte
-                        'Before the frame was captured by our filter driver, the NIC will chech FCS and we will not get it(DO NOT CARE)
-                        '
-                        'NOTICE: All data in network is transfered in BIG ENDIAN so we need convert first.
-
-                        Dim currentEthFrameTypeCode As ETHERNET_TYPE_CODE = BytesOperator.GetBigEndianUShort(ethFrameBuffer, 12)
-                        Dim dstAddr As DST_ADDR_TYPE = DST_ADDR_TYPE.LOCAL
-
-                        'We can only forward the IPv4&IPv6 packets
-                        If currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IP And (ethFrameBuffer(14) >> 4) = 4 Then
-                            'Resolve as IPv4 Packet (RFC791)
-                            If Not fpMgr.IsLocalIfIPAddr(ifIndex, {ethFrameBuffer(30), ethFrameBuffer(31), ethFrameBuffer(32), ethFrameBuffer(33)}) Then
-                                dstAddr = DST_ADDR_TYPE.NOT_LOCAL
-                            End If
-
-                        ElseIf currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IPv6 And (ethFrameBuffer(14) >> 4) = 6 Then
-                            'Resolve as IPv6 Packet (RFC2460)
-                            If Not fpMgr.IsLocalIfIPAddr(ifIndex, {ethFrameBuffer(38), ethFrameBuffer(39), ethFrameBuffer(40), ethFrameBuffer(41),
-                                                             ethFrameBuffer(42), ethFrameBuffer(43), ethFrameBuffer(44), ethFrameBuffer(45),
-                                                             ethFrameBuffer(46), ethFrameBuffer(47), ethFrameBuffer(48), ethFrameBuffer(49),
-                                                             ethFrameBuffer(50), ethFrameBuffer(51), ethFrameBuffer(52), ethFrameBuffer(53)}) Then
-                                dstAddr = DST_ADDR_TYPE.NOT_LOCAL
-                            End If
-                        End If
-
-
-                        If (dstAddr <> DST_ADDR_TYPE.LOCAL) And globalForwardEnable Then
-
-
-                            'Clear MAC address in the ethernet frame
-                            'We do not care that
-                            Array.Clear(ethFrameBuffer, 0, 12)
-
-                            'FORWARD
-                            ethFrameBuffer = fpMgr.ProcessForward(ethFrameBuffer)
-
-                            If ethFrameBuffer Is Nothing Then
-                                Exit Do
-                            End If
-
-                            Dim forwardIP As ipAddress
-
-                            currentEthFrameTypeCode = BytesOperator.GetBigEndianUShort(ethFrameBuffer, 12)
-                            'Get new ip addr
-                            If currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IP And (ethFrameBuffer(14) >> 4) = 4 Then
-                                'Resolve as IPv4 Packet (RFC791)
-                                forwardIP = New ipAddress({ethFrameBuffer(30), ethFrameBuffer(31), ethFrameBuffer(32), ethFrameBuffer(33)})
-                            ElseIf currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IPv6 And (ethFrameBuffer(14) >> 4) = 6 Then
-                                'Resolve as IPv6 Packet (RFC2460)
-                                forwardIP = New ipAddress({ethFrameBuffer(38), ethFrameBuffer(39), ethFrameBuffer(40), ethFrameBuffer(41),
-                                                             ethFrameBuffer(42), ethFrameBuffer(43), ethFrameBuffer(44), ethFrameBuffer(45),
-                                                             ethFrameBuffer(46), ethFrameBuffer(47), ethFrameBuffer(48), ethFrameBuffer(49),
-                                                             ethFrameBuffer(50), ethFrameBuffer(51), ethFrameBuffer(52), ethFrameBuffer(53)})
-                            End If
-
-                            If forwardIP.IPBytes IsNot Nothing Then
-                                'Get currect interface via route table
-                                Dim forwardIf As UInteger = ForwardTable(forwardIP).InterfaceIndex
-                                'Get MAC address from ARP or ND
-                                Dim forwardSrcDstEthernetAddress() As Byte = ForwardTable(forwardIP).EthernetDstSrcAddress
-
-                                Array.Copy(forwardSrcDstEthernetAddress, ethFrameBuffer, 12)
-
-                                'POSTROUTING
-                                ethFrameBuffer = fpMgr.ProcessPostrouting(ethFrameBuffer)
-
-                                SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, forwardIf, dStream)
-
-                            End If
-
-
-
-
-                        Else
-
-                            'INPUT
-                            ethFrameBuffer = fpMgr.ProcessInput(ethFrameBuffer)
-                            SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex, dStream)
-
-                        End If
-
-
-                    ElseIf (direction = TRANSFER_DIRECION.UpperToFilter) Then
-
-                        'First call OUTPUT and then POSTROUTING
-                        'PACKETS() = ProcessOUTPUT(Packet)
-                        'PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
-                        'TRANSMIT2NIC(PACKETS)
-
-                        'OUTPUT
-                        ethFrameBuffer = fpMgr.ProcessOutput(ethFrameBuffer)
-
-                        'POSTROUTING
-                        ethFrameBuffer = fpMgr.ProcessPostrouting(ethFrameBuffer)
-
-                        SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex, dStream)
-
-                    Else
-                        'Not a valid TRANSFER_DIRECION.
-                        'Just drop this packet - skip transmit to winptables kernel driver process.
-                        Exit Do
-                    End If
-                Catch
-                End Try
-            Loop While False
+        Else
+            dStream.BeginRead(buffer, 0, buffer.Length, New AsyncCallback(AddressOf readFromWinptablesDevice), dStream)
         End If
 
 
     End Sub
-    Private Sub SendEthFarmes2Kernel(ethFrames As Byte(), direction As TRANSFER_DIRECION, ifIndex As UInteger, dStream As FileStream)
+
+    Private Sub ProcessEthFrame(ethFrameBuffer As Byte(), direction As TRANSFER_DIRECION, ifIndex As UInteger)
+
+        Try
+            If (direction = TRANSFER_DIRECION.NICToFilter) Then
+
+                'PREROUTING
+                ethFrameBuffer = filterpointMgr.ProcessPrerouting(ethFrameBuffer)
+
+
+                'If the direction is match to the host process the INPUT,otherwise
+                'check IF THE FORWARD ENABLE and call FORWARD AND POSTROUTING
+                '
+                '
+                'The code may be like this:
+                '
+                'If IP.DEST = LOCAL Then
+                '   PACKETS() = ProcessINPUT(Packet)
+                '   TRANSMIT2UPPER(PACKETS())
+                'Else
+                '   If FORWARD_ENABLE Then
+                '       PACKETS() = ProcessFORWARD(Packet)
+                '       PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
+                '       TRANSMIT2NIC(PACKETS())
+                '   Else
+                '       'Just drop this packet - skip transmit to winptables kernel driver process.
+                '       Exit Do
+                '   End If
+                'End IF
+
+                'Resolve the ethFrame is in DIX Ethernet V2 Frame (Ethernet II)
+                'In experiment we never see any IEEE802.3 Ethernet frame on our windows machine
+                'DIXv2 Ethernet
+                'DstMAC-6Byte|SrcMAC-6byte|TypeCode-2Byte|Payload|FCS-4Byte
+                'Before the frame was captured by our filter driver, the NIC will chech FCS and we will not get it(DO NOT CARE)
+                '
+                'NOTICE: All data in network is transfered in BIG ENDIAN so we need convert first.
+
+                Dim currentEthFrameTypeCode As ETHERNET_TYPE_CODE = BytesOperator.GetBigEndianUShort(ethFrameBuffer, 12)
+                Dim notIPPacket As Boolean = True
+                Dim dstIP As IntPtr = Marshal.AllocHGlobal(28)
+                'We can only forward the IPv4&IPv6 packets
+                If currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IP And (ethFrameBuffer(14) >> 4) = 4 Then
+                    'Resolve as IPv4 Packet (RFC791)
+                    notIPPacket = False
+                    Marshal.WriteInt16(dstIP + 0, AddressFamily.InterNetwork)
+                    Marshal.Copy(ethFrameBuffer, 30, dstIP + 4, 4)
+                ElseIf currentEthFrameTypeCode = ETHERNET_TYPE_CODE.IPv6 And (ethFrameBuffer(14) >> 4) = 6 Then
+                    'Resolve as IPv6 Packet (RFC2460)
+                    notIPPacket = False
+                    Marshal.WriteInt16(dstIP + 0, AddressFamily.InterNetworkV6)
+                    Marshal.Copy(ethFrameBuffer, 38, dstIP + 8, 16)
+                End If
+
+
+                'INPUT (Not a IP Packet)
+                If notIPPacket Then
+                    ethFrameBuffer = filterpointMgr.ProcessInput(ethFrameBuffer)
+                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex)
+                    Return
+                End If
+
+                Dim outputRouteInfo As IntPtr = Marshal.AllocHGlobal(104)
+                Dim bestSrcIP As IntPtr = Marshal.AllocHGlobal(28)
+                Dim x As Integer = 0 'GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, dstIP, 0, outputRouteInfo, bestSrcIP)
+                Marshal.FreeHGlobal(bestSrcIP)
+
+                If x <> 0 Then
+                    Marshal.FreeHGlobal(outputRouteInfo)
+                    Return
+                End If
+                Dim origin As Integer = Marshal.ReadInt32(outputRouteInfo + 100)
+                Dim loopback As Byte = 1 ' Marshal.ReadByte(outputRouteInfo + 92)
+                Dim protocol As Integer = Marshal.ReadInt32(outputRouteInfo + 88)
+                Dim interfaceIndex As Integer = ifIndex 'Marshal.ReadInt32(outputRouteInfo + 8)
+                Dim family As AddressFamily = 2 ' Marshal.ReadInt32(outputRouteInfo + 44)
+                Dim nexthopIPByte() As Byte
+                If family = AddressFamily.InterNetwork Then
+                    nexthopIPByte = New Byte(3) {}
+                    Marshal.Copy(outputRouteInfo + 48, nexthopIPByte, 0, 4)
+                Else
+                    nexthopIPByte = New Byte(15) {}
+                    Marshal.Copy(outputRouteInfo + 52, nexthopIPByte, 0, 16)
+                End If
+                Marshal.FreeHGlobal(outputRouteInfo)
+
+                'ForLocal (Input)
+                If (loopback = 1) OrElse (origin = 1) Then
+                    ethFrameBuffer = filterpointMgr.ProcessInput(ethFrameBuffer)
+                    SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToUpper, ifIndex)
+                    Return
+                End If
+
+                'FORWARD
+                ethFrameBuffer = filterpointMgr.ProcessForward(ethFrameBuffer)
+                'SrcMac
+                Dim srcMac As Byte() = routingMgr.GetInterfaceMACByIfIndex(interfaceIndex)
+                'Copy srcMac to ethFrame
+                If srcMac Is Nothing Then
+                    Return
+                End If
+                Array.Copy(srcMac, 0, ethFrameBuffer, 6, 6)
+
+                For i = 0 To 5
+                    ethFrameBuffer(i) = &HFF
+                Next
+                'POSTROUTING
+                ethFrameBuffer = filterpointMgr.ProcessPostrouting(ethFrameBuffer)
+
+                SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, interfaceIndex)
+                Return
+            ElseIf (direction = TRANSFER_DIRECION.UpperToFilter) Then
+
+                'First call OUTPUT and then POSTROUTING
+                'PACKETS() = ProcessOUTPUT(Packet)
+                'PACKETS() = ProcessPOSTROUTING(ALL PACKET IN PACKETS())
+                'TRANSMIT2NIC(PACKETS)
+
+                'OUTPUT
+                ethFrameBuffer = filterpointMgr.ProcessOutput(ethFrameBuffer)
+
+
+                'POSTROUTING
+                ethFrameBuffer = filterpointMgr.ProcessPostrouting(ethFrameBuffer)
+
+                SendEthFarmes2Kernel(ethFrameBuffer, TRANSFER_DIRECION.FilterToNIC, ifIndex)
+                Return
+            Else
+                'Not a valid TRANSFER_DIRECION.
+                'Just drop this packet - skip transmit to winptables kernel driver process.
+                Return
+            End If
+        Catch
+        End Try
+    End Sub
+
+    Public Sub SendEthFarmes2Kernel(ethFrames As Byte(), direction As TRANSFER_DIRECION, ifIndex As UInteger)
 
         'One of the filter module return NULL exit (Drop)
         If ethFrames Is Nothing Then
@@ -237,7 +249,7 @@ Public Class WinptablesService
 
         Array.Copy(ethFrames, 0, sendBuffer, 9, ethFrames.Length)
 
-        dStream.Write(sendBuffer, 0, sendBuffer.Length)
+        deviceStream.Write(sendBuffer, 0, sendBuffer.Length)
 
     End Sub
 

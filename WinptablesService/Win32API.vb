@@ -45,6 +45,14 @@ Public Module Win32API
                                                                                             ByRef lpBytesReturned As UInteger,
                                                                                             lpOverlapped As IntPtr) As Boolean
 
+    Public Declare Unicode Function GetBestRoute2 Lib "iphlpapi" Alias "GetBestRoute2" (InterfaceLuid As IntPtr,
+                                                                                        InterfaceIndex As UInteger,
+                                                                                        SourceAddress As IntPtr,
+                                                                                        DestinationAddress As IntPtr,
+                                                                                        AddressSortOptions As UInteger,
+                                                                                        BestRoute As IntPtr,
+                                                                                        BestSourceAddress As IntPtr) As Integer
+
 
 End Module
 

@@ -9,54 +9,6 @@ Imports Microsoft.Win32
 
 Public Class RegistryUtils
 
-    Public Structure FilterModulesInfo
-        'Priority type here is set to LONG(64bit) mismatch the priority type UINT(32bit) from functions
-        'because we do not want to convert the type when comparing 2 FilterModulesInfo,
-        'otherwise we need convert type there to avoid overflow.
-        Public priority As Long
-        Public modulePath As String
-        Public processLib As Object
-
-        Public Sub New(p As UInteger, m As String)
-
-            priority = p
-            modulePath = m
-            processLib = Nothing
-
-            Try
-
-                If ModuleList.ContainsKey(m) Then
-                    processLib = ModuleList(m)
-                    Return
-                End If
-
-                Dim targetT As Type = Nothing
-                Dim asm As Reflection.Assembly = Reflection.Assembly.LoadFile(m)
-                For Each T As Type In asm.GetTypes()
-                    If T.Name = "WinptablesFilterModule" Then
-                        targetT = T
-                        Exit For
-                    End If
-                Next
-
-                If targetT IsNot Nothing Then
-                    Dim targetObj As Object = asm.CreateInstance(targetT.FullName)
-                    Dim mount As Boolean = targetT.GetMethod("WinptablesModuleCreate").Invoke(targetObj, Nothing)
-                    If mount Then
-                        processLib = targetObj
-                        ModuleList.Add(m, targetObj)
-                    Else
-                        targetT.GetMethod("WinptablesModuleDestory").Invoke(targetObj, Nothing)
-                    End If
-                End If
-            Catch
-            End Try
-        End Sub
-    End Structure
-
-    Public Shared Function FilterModulesCompare(x As FilterModulesInfo, y As FilterModulesInfo) As Integer
-        Return (x.priority - y.priority)
-    End Function
 
     'NOTICE: The keys will store in "Computer\HKEY_LOCAL_MACHINE\SOFTWARE\icSecLab\winptables"
     'SubKeys -  PREROUTING,INPUT,OUTPUT,POSTROUTING
