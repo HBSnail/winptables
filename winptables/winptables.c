@@ -163,7 +163,7 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 			//Ring buffer block structure:
 			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
-			WriteBlockToRingBuffer(&kernel2userRingBuffer_OUTBOUND, dataBuffer);
+			WriteBlockToRingBuffer(&user2kernelRingBuffer_OUTBOUND, dataBuffer);
 
 		} while (FALSE);
 

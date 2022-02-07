@@ -480,7 +480,7 @@ VOID WPTReceivedFromNIC(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netBuf
 			break;
 		}
 
-		
+
 		WriteNBLIntoRingBuffer(&kernel2userRingBuffer_INBOUND,netBufferLists, NICToFilter, filterContext->miniportIfIndex);
 
 		
