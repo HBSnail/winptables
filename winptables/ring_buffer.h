@@ -19,21 +19,21 @@
         NDIS_SPIN_LOCK writeLock;
         NDIS_SPIN_LOCK readLock;
         BYTE* bufferAddress;
-        UINT head;
-        UINT tail;
-        UINT bufferSize;
-        UINT modFactor;
+        ULONG head;
+        ULONG tail;
+        ULONG bufferSize;
+        ULONG modFactor;
         KEVENT dataWrite;
 
     }RING_BUFFER;
 
-	NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN UINT powerOf2length);
+	NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length);
 
 	VOID FreeRingBuffer(IN RING_BUFFER* ringBuffer);
 
-	NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, UINT length, BOOLEAN isLocked);
+	NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, ULONG length, BOOLEAN isLocked);
 
-	NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, UINT length, BOOLEAN isLocked);
+	NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, ULONG length, BOOLEAN isLocked);
 
 	NTSTATUS ReadBlockFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* destinationBuffer);
 

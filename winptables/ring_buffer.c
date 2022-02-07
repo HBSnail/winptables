@@ -9,10 +9,10 @@
 #include "ring_buffer.h"
 
 
-UINT GetRingBufferAvailable(RING_BUFFER* ringBuffer) {
-	return ((ringBuffer->head) > (ringBuffer->tail)) ?
-		(ringBuffer->bufferSize - (ringBuffer->tail) + (ringBuffer->head)) :
-		(ringBuffer->tail) - (ringBuffer->head);
+ULONG GetRingBufferAvailable(RING_BUFFER* ringBuffer) {
+	return ((ringBuffer->head) >= (ringBuffer->tail)) ?
+		((ringBuffer->head) - (ringBuffer->tail)) :
+		ringBuffer->bufferSize - (ringBuffer->tail) + (ringBuffer->head);
 }
  /*++
 
@@ -23,14 +23,14 @@ UINT GetRingBufferAvailable(RING_BUFFER* ringBuffer) {
  Arguments:
 
 	RING_BUFFER* ringBuffer - the pointer of a ring buffer structure
-	UINT powerOf2length - the maxium length of the ring buffer will be set to (2^powerOf2length)bytes
+	ULONG powerOf2length - the maxium length of the ring buffer will be set to (2^powerOf2length)bytes
 
  Return Value:
 
 	 NTSTATUS indecate if the ring buffer init successful
 
  --*/
-NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN UINT powerOf2length) {
+NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length) {
 
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -40,7 +40,7 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN UINT powerOf2length) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		UINT length = (1 << powerOf2length);
+		ULONG length = (1 << powerOf2length);
 
 		if (length == 0) {
 			status = STATUS_UNSUCCESSFUL;
@@ -133,7 +133,7 @@ Arguments:
 
 	RING_BUFFER* destinationRingBuffer - the pointer of a ring buffer structure to be written
 	VOID* sourceBuffer
-	UINT length - the length to be written
+	ULONG length - the length to be written
 	BOOLEAN isLocked - indecate whether the resource lock of the ring buffer has been acquired or not
 
 Return Value:
@@ -141,7 +141,7 @@ Return Value:
 	NTSTATUS - whether writing successful
 
 --*/
-NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, UINT length, BOOLEAN isLocked) {
+NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, ULONG length, BOOLEAN isLocked) {
 
 	NTSTATUS status = STATUS_SUCCESS;
 	BOOLEAN dispatchLevel = (KeGetCurrentIrql() == DISPATCH_LEVEL);
@@ -161,7 +161,7 @@ NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuff
 		}
 		else {
 			//Get the length and copy twice
-			UINT partLength = destinationRingBuffer->bufferSize - destinationRingBuffer->head;
+			ULONG partLength = destinationRingBuffer->bufferSize - destinationRingBuffer->head;
 			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->head, (BYTE*)sourceBuffer, partLength);
 			NdisMoveMemory(destinationRingBuffer->bufferAddress, (BYTE*)sourceBuffer + partLength, length - partLength);
 		}
@@ -197,7 +197,7 @@ Arguments:
 
 	RING_BUFFER* sourceRingBuffer - the pointer of a ring buffer structure to be read
 	VOID* destinationBuffer
-	UINT length - the length to be read
+	ULONG length - the length to be read
 	BOOLEAN isLocked - indecate whether the resource lock of the ring buffer has been acquired or not
 
 Return Value:
@@ -205,7 +205,7 @@ Return Value:
 	NTSTATUS - whether reading successful
 
 --*/
-NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, UINT length, BOOLEAN isLocked) {
+NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, ULONG length, BOOLEAN isLocked) {
 	NTSTATUS status = STATUS_SUCCESS;
 	BOOLEAN dispatchLevel = (KeGetCurrentIrql() == DISPATCH_LEVEL);
 
@@ -224,7 +224,7 @@ NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffe
 		}
 		else {
 			//Get the length and copy twice
-			UINT partLength = sourceRingBuffer->bufferSize - sourceRingBuffer->tail;
+			ULONG partLength = sourceRingBuffer->bufferSize - sourceRingBuffer->tail;
 			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->tail, partLength);
 			NdisMoveMemory((BYTE*)destinationBuffer + partLength, sourceRingBuffer->bufferAddress, length - partLength);
 		}

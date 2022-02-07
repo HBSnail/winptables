@@ -24,6 +24,84 @@ UNICODE_STRING deviceName;
 UNICODE_STRING linkName;
 DEVICE_OBJECT* winptablesCommunicationDevice;
 
+
+VOID ReadingRoutine(VOID* must_null_ptr) {
+	VOID* dataBuffer = ExAllocatePoolWithTag(NonPagedPool, RING_BUFFER_BLOCK_SIZE, TEMP_POOL_ALLOC_TAG);
+	
+	while (1) {
+
+		if (dataBuffer == NULL) {
+			return;
+		}
+		do {
+
+			NTSTATUS status = ReadBlockFromRingBuffer(&user2kernelRingBuffer, dataBuffer);
+
+
+			if (!NT_SUCCESS(status)) {
+				break;
+			}
+
+			//Ring buffer block structure:
+			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
+
+			ULONG direction = *(ULONG*)(((BYTE*)dataBuffer) + 0);
+			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 4);
+			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 8);
+
+			FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
+			if (fContext == NULL) {
+				break;
+			}
+			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 12, direction, NO_FLAG);
+
+		} while (FALSE);
+
+	}
+
+	ExFreePoolWithTag(dataBuffer, TEMP_POOL_ALLOC_TAG);
+	DbgPrint("THREAD TERMINATE\n");
+	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
+	DbgPrint("THREAD TERMINATE %d\n", s);
+
+}
+
+
+VOID TestingRoutine(VOID* must_null_ptr) {
+	VOID* dataBuffer = ExAllocatePoolWithTag(NonPagedPool, RING_BUFFER_BLOCK_SIZE, TEMP_POOL_ALLOC_TAG);
+
+	while (1) {
+
+		if (dataBuffer == NULL) {
+			return;
+		}
+		do {
+
+			NTSTATUS status = ReadBlockFromRingBuffer(&kernel2userRingBuffer, dataBuffer);
+
+
+			if (!NT_SUCCESS(status)) {
+				break;
+			}
+
+			//Ring buffer block structure:
+			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
+			((BYTE*)dataBuffer)[0] ++;
+			WriteBlockToRingBuffer(&user2kernelRingBuffer, dataBuffer);
+
+		} while (FALSE);
+
+	}
+
+	ExFreePoolWithTag(dataBuffer, TEMP_POOL_ALLOC_TAG);
+	DbgPrint("THREAD TERMINATE\n");
+	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
+	DbgPrint("THREAD TERMINATE %d\n", s);
+
+}
+
+
+
 /*++
 
 Routine Description:
@@ -84,7 +162,7 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 
 		//Check the NDIS version
 		//winptables only support NDIS_VERSION >= 6.20(win7&server2008)
-		UINT ndisVersion = NdisGetVersion();
+		ULONG ndisVersion = NdisGetVersion();
 		if (ndisVersion < NDIS_RUNTIME_VERSION_620)
 		{
 			status = NDIS_STATUS_UNSUPPORTED_REVISION;
@@ -205,6 +283,34 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 			FreeRingBuffer(&user2kernelRingBuffer);
 			break;
 		}
+
+		
+		//Create thread handling the user2kernelRingBuffer
+		HANDLE readingThread = NULL ;
+		status = PsCreateSystemThread(&readingThread,0,NULL,NULL,NULL, (PKSTART_ROUTINE)ReadingRoutine, NULL);
+		ZwClose(readingThread);
+		if (!NT_SUCCESS(status)) {
+			NdisFreeSpinLock(&filterListLock);
+			NdisFDeregisterFilterDriver(filterDriverHandle);
+			IoDeleteDevice(winptablesCommunicationDevice);
+			FreeRingBuffer(&kernel2userRingBuffer);
+			FreeRingBuffer(&user2kernelRingBuffer);
+			break;
+		}
+
+
+
+		status = PsCreateSystemThread(&readingThread, 0, NULL, NULL, NULL, (PKSTART_ROUTINE)TestingRoutine, NULL);
+		ZwClose(readingThread);
+		if (!NT_SUCCESS(status)) {
+			NdisFreeSpinLock(&filterListLock);
+			NdisFDeregisterFilterDriver(filterDriverHandle);
+			IoDeleteDevice(winptablesCommunicationDevice);
+			FreeRingBuffer(&kernel2userRingBuffer);
+			FreeRingBuffer(&user2kernelRingBuffer);
+			break;
+		}
+
 
 	} while (FALSE);
 

@@ -18,6 +18,9 @@
     #define DRIVER_MAJOR_VERSION 1
     #define DRIVER_MINOR_VERSION 0
 
+    #define or ||
+    #define and &&
+
     #define NO_FLAG 0
 
     #define FILTER_SERVICE_NAME  L"winptables"

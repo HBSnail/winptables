@@ -5,8 +5,8 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{2EB9DDA0-4E07-4C53-973D-D6CC5AF4B4F2}</ProjectGuid>
-    <OutputType>WinExe</OutputType>
-    <StartupObject>WinptablesService.WinptablesService</StartupObject>
+    <OutputType>Exe</OutputType>
+    <StartupObject>WinptablesService.Main</StartupObject>
     <RootNamespace>WinptablesService</RootNamespace>
     <AssemblyName>WinptablesService</AssemblyName>
     <FileAlignment>512</FileAlignment>
@@ -76,6 +76,7 @@
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Core" />
     <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
     <Import Include="Microsoft.VisualBasic" />
@@ -105,9 +106,7 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="RegistryUtils.vb" />
-    <Compile Include="WinptablesService.vb">
-      <SubType>Component</SubType>
-    </Compile>
+    <Compile Include="WinptablesService.vb" />
     <Compile Include="WinptablesService.Designer.vb">
       <DependentUpon>WinptablesService.vb</DependentUpon>
     </Compile>

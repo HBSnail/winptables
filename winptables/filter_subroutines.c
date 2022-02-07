@@ -16,7 +16,7 @@ extern NDIS_SPIN_LOCK filterListLock;
 extern LIST_ENTRY filterModuleList;
 extern RING_BUFFER kernel2userRingBuffer;
 
-NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, UINT length, BYTE* ethDataPtr, TRANSFER_DIRECION direction, ULONG flag) {
+NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, BYTE* ethDataPtr, TRANSFER_DIRECION direction, ULONG flag) {
 
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	do {
@@ -39,11 +39,11 @@ NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, UINT length, BYTE* eth
 		}
 		iNBLfromEthpacket->SourceHandle = filterContext->filterHandle;
 
-		if ((BYTE)direction == (BYTE)FilterToNIC) {
+		if ((ULONG)direction == (ULONG)FilterToNIC) {
 			status = STATUS_SUCCESS;
 			NdisFSendNetBufferLists(filterContext->filterHandle, iNBLfromEthpacket, NDIS_DEFAULT_PORT_NUMBER, flag);
 		}
-		else if ((BYTE)direction == (BYTE)FilterToUpper) {
+		else if ((ULONG)direction == (ULONG)FilterToUpper) {
 			status = STATUS_SUCCESS;
 			NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, iNBLfromEthpacket, NDIS_DEFAULT_PORT_NUMBER, 1, flag);
 		}
@@ -113,7 +113,8 @@ VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer ,NET_BUFFER_LIST*  netBuffer
 
 
 			//Ring buffer block structure:
-			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending ....
+			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
+
 			*((ULONG*)((BYTE*)freeRingBufferBlock + 0)) = (ULONG)direction;
 			*((ULONG*)((BYTE*)freeRingBufferBlock + 4)) = (ULONG)ifIndex;
 			*((ULONG*)((BYTE*)freeRingBufferBlock + 8)) = (ULONG)netbuffer->DataLength;
@@ -132,11 +133,19 @@ VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer ,NET_BUFFER_LIST*  netBuffer
 
 }
 
+FILTER_CONTEXT* ifCache[65535];
+
 FILTER_CONTEXT* GetFilterContextByMiniportInterfaceIndex(ULONG index) {
+
+	if (ifCache[index] != NULL) {
+			return ifCache[index];
+	}
 
 	for (LIST_ENTRY* p = filterModuleList.Flink; p != &filterModuleList; p = p->Flink) {
 
 		FILTER_CONTEXT* context = CONTAINING_RECORD(p, FILTER_CONTEXT, filterModuleLink);
+
+		ifCache[context->miniportIfIndex] = context;
 
 		if (context->miniportIfIndex == index) {
 
@@ -471,8 +480,8 @@ VOID WPTReceivedFromNIC(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netBuf
 		WriteNBLIntoRingBuffer(&kernel2userRingBuffer,netBufferLists, NICToFilter, filterContext->miniportIfIndex);
 
 		
-		//NdisFReturnNetBufferLists(filterContext->filterHandle, netBufferLists, receiveFlags);
-		NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, numberOfNetBufferLists, receiveFlags);
+		NdisFReturnNetBufferLists(filterContext->filterHandle, netBufferLists, receiveFlags);
+		//NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, numberOfNetBufferLists, receiveFlags);
 
 	} while (FALSE);
 
@@ -549,8 +558,8 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 		WriteNBLIntoRingBuffer(&kernel2userRingBuffer, netBufferLists, UpperToFilter, filterContext->miniportIfIndex);
 
 
-		//NdisFSendNetBufferListsComplete(filterContext->filterHandle, netBufferLists ,sendFlags);
-		NdisFSendNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, sendFlags);
+		NdisFSendNetBufferListsComplete(filterContext->filterHandle, netBufferLists ,sendFlags);
+		//NdisFSendNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, sendFlags);
 
 	} while (FALSE);
 

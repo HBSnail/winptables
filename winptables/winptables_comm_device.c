@@ -10,7 +10,7 @@
 #include "ring_buffer.h"
 #include "filter_subroutines.h"
 
-extern RING_BUFFER kernel2userRingBuffer;
+
 
 NTSTATUS WPTCommDeviceCreate(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	NTSTATUS status = STATUS_SUCCESS;
@@ -43,7 +43,7 @@ NTSTATUS WPTCommDeviceClean(DEVICE_OBJECT* deviceObject, IRP* irp) {
 NTSTATUS WPTCommDeviceIOCtl(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	irp->IoStatus.Status = status;
+	irp->IoStatus.Status = STATUS_SUCCESS;
 
 
 	irp->IoStatus.Information = 0;
@@ -55,8 +55,9 @@ NTSTATUS WPTCommDeviceIOCtl(DEVICE_OBJECT* deviceObject, IRP* irp) {
 NTSTATUS WPTCommDeviceRead(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
+	IO_STACK_LOCATION* stack = IoGetCurrentIrpStackLocation(irp);
 
-	irp->IoStatus.Information = 0;
+
 	irp->IoStatus.Status = status;
 
 	IoCompleteRequest(irp, IO_NO_INCREMENT);
@@ -67,11 +68,11 @@ NTSTATUS WPTCommDeviceRead(DEVICE_OBJECT* deviceObject, IRP* irp) {
 NTSTATUS WPTCommDeviceWrite(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	irp->IoStatus.Information = 0;
+	IO_STACK_LOCATION* stack = IoGetCurrentIrpStackLocation(irp);
+	
+
 	irp->IoStatus.Status = status;
 
 	IoCompleteRequest(irp, IO_NO_INCREMENT);
 	return status;
 }
-
-

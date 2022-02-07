@@ -7,7 +7,6 @@ Public Module WPTGlobal
 
     Public Const WINPTABLES_DEVICE_NAME As String = "\\.\winptables_comm"
 
-    Public globalService As WinptablesService
 
     Public globalForwardEnable As Boolean = True
 
@@ -89,7 +88,7 @@ Public Module WPTGlobal
 
                 If targetT IsNot Nothing Then
                     Dim targetObj As Object = asm.CreateInstance(targetT.FullName)
-                    Dim mount As Boolean = targetT.GetMethod("WinptablesModuleCreate").Invoke(targetObj, {globalService})
+                    Dim mount As Boolean = False
                     If mount Then
                         processLib = targetObj
                         ModuleList.Add(m, targetObj)
