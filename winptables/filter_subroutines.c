@@ -14,7 +14,12 @@ extern NDIS_HANDLE filterDriverHandle;
 extern NDIS_HANDLE filterDriverObject;
 extern NDIS_SPIN_LOCK filterListLock;
 extern LIST_ENTRY filterModuleList;
-extern RING_BUFFER kernel2userRingBuffer;
+
+
+RING_BUFFER kernel2userRingBuffer_INBOUND;
+RING_BUFFER kernel2userRingBuffer_OUTBOUND;
+
+FILTER_CONTEXT* interfaceCache[65536] = { NULL };
 
 NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, BYTE* ethDataPtr, TRANSFER_DIRECION direction, ULONG flag) {
 
@@ -133,19 +138,17 @@ VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer ,NET_BUFFER_LIST*  netBuffer
 
 }
 
-FILTER_CONTEXT* ifCache[65535];
-
 FILTER_CONTEXT* GetFilterContextByMiniportInterfaceIndex(ULONG index) {
 
-	if (ifCache[index] != NULL) {
-			return ifCache[index];
+	if (interfaceCache[index] != NULL) {
+		return interfaceCache[index];
 	}
 
 	for (LIST_ENTRY* p = filterModuleList.Flink; p != &filterModuleList; p = p->Flink) {
 
 		FILTER_CONTEXT* context = CONTAINING_RECORD(p, FILTER_CONTEXT, filterModuleLink);
 
-		ifCache[context->miniportIfIndex] = context;
+		interfaceCache[context->miniportIfIndex] = context;
 
 		if (context->miniportIfIndex == index) {
 
@@ -156,7 +159,6 @@ FILTER_CONTEXT* GetFilterContextByMiniportInterfaceIndex(ULONG index) {
 
 	return NULL;
 }
-
 
 NDIS_STATUS WPTFilterSetOptions(NDIS_HANDLE  ndisFilterDriverHandle, NDIS_HANDLE  filterDriverContext) {
 
@@ -310,6 +312,7 @@ NDIS_STATUS WPTFilterAttach(NDIS_HANDLE ndisfilterHandle, NDIS_HANDLE filterDriv
 		InsertHeadList(&filterModuleList, &filterContext->filterModuleLink);
 		NDIS_RELEASE_LOCK(&filterListLock, FALSE);
 
+		interfaceCache[filterContext->miniportIfIndex] = filterContext;
 
 	} while (FALSE);
 
@@ -426,6 +429,7 @@ VOID WPTFilterDetach(NDIS_HANDLE filterModuleContext) {
 		filterContext->sendNetBufferListPool = NULL;
 	}
 
+	interfaceCache[filterContext->miniportIfIndex] = NULL;
 
 	NDIS_ACQUIRE_LOCK(&filterListLock, FALSE);
 	RemoveEntryList(&filterContext->filterModuleLink);
@@ -477,7 +481,7 @@ VOID WPTReceivedFromNIC(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netBuf
 		}
 
 		
-		WriteNBLIntoRingBuffer(&kernel2userRingBuffer,netBufferLists, NICToFilter, filterContext->miniportIfIndex);
+		WriteNBLIntoRingBuffer(&kernel2userRingBuffer_INBOUND,netBufferLists, NICToFilter, filterContext->miniportIfIndex);
 
 		
 		NdisFReturnNetBufferLists(filterContext->filterHandle, netBufferLists, receiveFlags);
@@ -555,7 +559,7 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 		}
 
 
-		WriteNBLIntoRingBuffer(&kernel2userRingBuffer, netBufferLists, UpperToFilter, filterContext->miniportIfIndex);
+		WriteNBLIntoRingBuffer(&kernel2userRingBuffer_OUTBOUND, netBufferLists, UpperToFilter, filterContext->miniportIfIndex);
 
 
 		NdisFSendNetBufferListsComplete(filterContext->filterHandle, netBufferLists ,sendFlags);
