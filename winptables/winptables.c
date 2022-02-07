@@ -17,8 +17,8 @@ NDIS_SPIN_LOCK filterListLock;
 LIST_ENTRY filterModuleList;
 
 
-RING_BUFFER commRingBuffer;
-
+RING_BUFFER kernel2userRingBuffer;
+RING_BUFFER user2kernelRingBuffer;
 
 UNICODE_STRING deviceName;
 UNICODE_STRING linkName;
@@ -49,6 +49,10 @@ VOID DriverUnload(DRIVER_OBJECT* driverObject) {
 	IoDeleteSymbolicLink(&linkName);
 
 	IoDeleteDevice(winptablesCommunicationDevice);
+
+	FreeRingBuffer(&kernel2userRingBuffer);
+
+	FreeRingBuffer(&user2kernelRingBuffer);
 
 	return;
 }
@@ -181,13 +185,24 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		//Init the ring buffer which can share data with Ring3
 		//20 means 1<<20 Bytes = 1MB
 		//Init ring buffer with size of 1MB
-		status = InitRingBuffer(&commRingBuffer, 20);
+		status = InitRingBuffer(&kernel2userRingBuffer, 20);
 
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
 			NdisFDeregisterFilterDriver(filterDriverHandle);
 			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&commRingBuffer);
+			FreeRingBuffer(&kernel2userRingBuffer);
+			break;
+		}
+
+		status = InitRingBuffer(&user2kernelRingBuffer, 20);
+
+		if (!NT_SUCCESS(status)) {
+			NdisFreeSpinLock(&filterListLock);
+			NdisFDeregisterFilterDriver(filterDriverHandle);
+			IoDeleteDevice(winptablesCommunicationDevice);
+			FreeRingBuffer(&kernel2userRingBuffer);
+			FreeRingBuffer(&user2kernelRingBuffer);
 			break;
 		}
 

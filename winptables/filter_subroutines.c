@@ -14,7 +14,7 @@ extern NDIS_HANDLE filterDriverHandle;
 extern NDIS_HANDLE filterDriverObject;
 extern NDIS_SPIN_LOCK filterListLock;
 extern LIST_ENTRY filterModuleList;
-extern RING_BUFFER commRingBuffer;
+extern RING_BUFFER kernel2userRingBuffer;
 
 NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, UINT length, BYTE* ethDataPtr, TRANSFER_DIRECION direction, ULONG flag) {
 
@@ -78,6 +78,57 @@ VOID WPTFreeNBL(NET_BUFFER_LIST* NetBufferLists) {
 	}
 
 	NdisFreeNetBufferList(pNetBufList);
+
+}
+
+VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer ,NET_BUFFER_LIST*  netBufferLists, TRANSFER_DIRECION direction,ULONG ifIndex) {
+
+	NET_BUFFER_LIST* currentNBL = netBufferLists;
+
+	//Get all netbuffer structure in NBLs
+	while (currentNBL != NULL) {
+
+		for (NET_BUFFER* netbuffer = NET_BUFFER_LIST_FIRST_NB(currentNBL); netbuffer != NULL; netbuffer = NET_BUFFER_NEXT_NB(netbuffer)) {
+
+			if (netbuffer->DataLength >= (RING_BUFFER_BLOCK_SIZE - 12)) {
+				//The frame is TOO LARGE
+				continue;
+			}
+
+			VOID* freeRingBufferBlock = ExAllocatePoolWithTag(NonPagedPool, RING_BUFFER_BLOCK_SIZE, TEMP_POOL_ALLOC_TAG);
+
+			if (freeRingBufferBlock == NULL) {
+				//Memory ALLOC FAILED
+				continue;
+			}
+
+			NdisZeroMemory(freeRingBufferBlock, RING_BUFFER_BLOCK_SIZE);
+
+
+			VOID* ethDataPtr = NdisGetDataBuffer(netbuffer, netbuffer->DataLength, (BYTE*)freeRingBufferBlock + 12, 1, 0);
+			//The data in NBL is contiguous system will not auto copy the data, we shouled copy manually
+			if (ethDataPtr != ((BYTE*)freeRingBufferBlock + 12)) {
+				NdisMoveMemory((BYTE*)freeRingBufferBlock + 12, ethDataPtr, netbuffer->DataLength);
+			}
+
+
+			//Ring buffer block structure:
+			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending ....
+			*((ULONG*)((BYTE*)freeRingBufferBlock + 0)) = (ULONG)direction;
+			*((ULONG*)((BYTE*)freeRingBufferBlock + 4)) = (ULONG)ifIndex;
+			*((ULONG*)((BYTE*)freeRingBufferBlock + 8)) = (ULONG)netbuffer->DataLength;
+
+
+			WriteBlockToRingBuffer(ringBuffer, freeRingBufferBlock);
+
+			ExFreePoolWithTag(freeRingBufferBlock, TEMP_POOL_ALLOC_TAG);
+			freeRingBufferBlock = NULL;
+			ethDataPtr = NULL;
+
+
+		}
+		currentNBL = NET_BUFFER_LIST_NEXT_NBL(currentNBL);
+	}
 
 }
 
@@ -184,7 +235,7 @@ NDIS_STATUS WPTFilterAttach(NDIS_HANDLE ndisfilterHandle, NDIS_HANDLE filterDriv
 
 		filterContext->miniportName.Length = filterContext->miniportName.MaximumLength = attachParameters->BaseMiniportName->Length;
 		filterContext->miniportName.Buffer = (PWSTR)((PUCHAR)filterContext->miniportFriendlyName.Buffer + filterContext->miniportFriendlyName.Length);
-		NdisMoveMemory(filterContext->miniportName.Buffer,attachParameters->BaseMiniportName->Buffer,filterContext->miniportName.Length);
+		NdisMoveMemory(filterContext->miniportName.Buffer, attachParameters->BaseMiniportName->Buffer, filterContext->miniportName.Length);
 
 		filterContext->miniportIfIndex = attachParameters->BaseMiniportIfIndex;
 
@@ -207,7 +258,7 @@ NDIS_STATUS WPTFilterAttach(NDIS_HANDLE ndisfilterHandle, NDIS_HANDLE filterDriv
 		filterContext->sendNetBufferListPool = NdisAllocateNetBufferListPool(filterContext->filterHandle, &PoolParameters);
 
 		//TODO: disable the offloads converient for future process
-		
+
 		/*
 		NDIS_OFFLOAD_PARAMETERS disableAllOffload;
 		NdisZeroMemory(&disableAllOffload, sizeof(NDIS_OFFLOAD_PARAMETERS));
@@ -297,7 +348,7 @@ NDIS_STATUS WPTFilterRestart(NDIS_HANDLE filterModuleContext, NDIS_FILTER_RESTAR
 
 	ndisRestartAttributes = RestartParameters->RestartAttributes;
 
-	
+
 	// If NdisRestartAttributes is not NULL, then the filter can modify generic
 	// attributes and add new media specific info attributes at the end.
 	// Otherwise, if NdisRestartAttributes is NULL, the filter should not try to
@@ -308,13 +359,13 @@ NDIS_STATUS WPTFilterRestart(NDIS_HANDLE filterModuleContext, NDIS_FILTER_RESTAR
 
 		ndisGeneralAttributes = (PNDIS_RESTART_GENERAL_ATTRIBUTES)ndisRestartAttributes->Data;
 
-		
+
 		// Check to see if we need to change any attributes. For example, the
 		// driver can change the current MAC address here. Or the driver can add
 		// media specific info attributes.
 		ndisGeneralAttributes->LookaheadSize = 128;
 
-		
+
 		// Check each attribute to see whether the filter needs to modify it.
 		NextAttributes = ndisRestartAttributes->Next;
 
@@ -416,30 +467,12 @@ VOID WPTReceivedFromNIC(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netBuf
 			break;
 		}
 
-		NET_BUFFER_LIST* currentNBL = netBufferLists;
+		
+		WriteNBLIntoRingBuffer(&kernel2userRingBuffer,netBufferLists, NICToFilter, filterContext->miniportIfIndex);
 
-		//Get all netbuffer structure in NBLs
-		while (currentNBL != NULL) {
-
-			for (NET_BUFFER* netbuffer = NET_BUFFER_LIST_FIRST_NB(currentNBL); netbuffer != NULL; netbuffer = NET_BUFFER_NEXT_NB(netbuffer)) {
-
-				VOID* freeSpace = ExAllocatePoolWithTag(NonPagedPool, netbuffer->DataLength, TEMP_POOL_ALLOC_TAG);
-				if (freeSpace != NULL) {
-					VOID* ethDataPtr = NdisGetDataBuffer(netbuffer, netbuffer->DataLength, freeSpace, 1, 0);
-
-
-					WriteEthFrameToRingBuffer(&commRingBuffer, ethDataPtr, netbuffer->DataLength, filterContext, NICToFilter);
-
-					ExFreePoolWithTag(freeSpace, TEMP_POOL_ALLOC_TAG);
-					freeSpace = NULL;
-					ethDataPtr = NULL;
-
-				}
-			}
-			currentNBL = NET_BUFFER_LIST_NEXT_NBL(currentNBL);
-		}
-
-		NdisFReturnNetBufferLists(filterContext->filterHandle, netBufferLists, receiveFlags);
+		
+		//NdisFReturnNetBufferLists(filterContext->filterHandle, netBufferLists, receiveFlags);
+		NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, numberOfNetBufferLists, receiveFlags);
 
 	} while (FALSE);
 
@@ -464,7 +497,7 @@ VOID WPTSendToUpperFinished(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* ne
 		pNextNetBufList = NET_BUFFER_LIST_NEXT_NBL(pNetBufList);
 		NET_BUFFER_LIST_NEXT_NBL(pNetBufList) = NULL;
 
-		if (pNetBufList->SourceHandle == filterContext->filterHandle) 
+		if (pNetBufList->SourceHandle == filterContext->filterHandle)
 		{
 			//If the NBL has our tag, FREE it.
 			WPTFreeNBL(pNetBufList);
@@ -487,7 +520,7 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 
 	FILTER_CONTEXT* filterContext = (FILTER_CONTEXT*)filterModuleContext;
 
-	NET_BUFFER_LIST* currentNBL = netBufferLists;
+	
 	BOOLEAN dispatchLevel;
 
 	do
@@ -499,7 +532,7 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 		// If the filter is not in running state, fail the send
 		if (filterContext->filterState != FilterRunning)
 		{
-
+			NET_BUFFER_LIST* currentNBL = netBufferLists;
 			while (currentNBL != NULL)
 			{
 				NET_BUFFER_LIST_STATUS(currentNBL) = NDIS_STATUS_PAUSED;
@@ -513,30 +546,11 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 		}
 
 
-		//Get all netbuffer structure in NBLs
-		while (currentNBL != NULL) {
+		WriteNBLIntoRingBuffer(&kernel2userRingBuffer, netBufferLists, UpperToFilter, filterContext->miniportIfIndex);
 
-		
-			for (NET_BUFFER* netbuffer = NET_BUFFER_LIST_FIRST_NB(currentNBL); netbuffer != NULL; netbuffer = NET_BUFFER_NEXT_NB(netbuffer)) {
 
-				VOID* freeSpace = ExAllocatePoolWithTag(NonPagedPool, netbuffer->DataLength, TEMP_POOL_ALLOC_TAG);
-				if (freeSpace != NULL) {
-					VOID* ethDataPtr = NdisGetDataBuffer(netbuffer, netbuffer->DataLength, freeSpace, 1, 0);
-
-					WriteEthFrameToRingBuffer(&commRingBuffer, ethDataPtr, netbuffer->DataLength, filterContext, UpperToFilter);
-
-					ExFreePoolWithTag(freeSpace, TEMP_POOL_ALLOC_TAG);
-					freeSpace = NULL;
-					ethDataPtr = NULL;
-
-				}
-
-			}
-
-			currentNBL = NET_BUFFER_LIST_NEXT_NBL(currentNBL);
-		}
-
-		NdisFSendNetBufferListsComplete(filterContext->filterHandle, netBufferLists, sendFlags);
+		//NdisFSendNetBufferListsComplete(filterContext->filterHandle, netBufferLists ,sendFlags);
+		NdisFSendNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, sendFlags);
 
 	} while (FALSE);
 

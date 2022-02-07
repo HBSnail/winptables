@@ -11,7 +11,7 @@
 
     #include <ntifs.h>
     #include <ndis.h>
-
+    #include <netioapi.h>
 
     #define NDIS_MAJOR_VERSION 6
     #define NDIS_MINOR_VERSION 20

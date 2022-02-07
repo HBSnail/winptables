@@ -1,0 +1,14 @@
+
+				//EthTypeCode is in big endian,convert to little endian!!!
+				USHORT etherFrameType = *((BYTE*)freeRingBufferBlock + 24);
+				etherFrameType = (etherFrameType << 8) | (*((BYTE*)freeRingBufferBlock + 25));
+				//Now we get the ethtype in little endian (x86-64)
+
+				DbgPrint("etherType = %d\n", etherFrameType);
+
+				SOCKADDR_INET destIP;
+				MIB_IPFORWARD_ROW2 forwardInfo;
+				SOCKADDR_INET bestSrcIP;
+				NdisZeroMemory(&destIP, sizeof(destIP));
+				destIP.si_family = 2;
+				GetBestRoute2(NULL, filterContext->miniportIfIndex, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);

@@ -10,16 +10,17 @@
 
     #define _RING_BUFFER_H_
 
+    #define RING_BUFFER_BLOCK_SIZE 2048
     #include "global.h"
 
     typedef struct _RING_BUFFER
     {
 
-        NDIS_SPIN_LOCK resLock;
+        NDIS_SPIN_LOCK writeLock;
+        NDIS_SPIN_LOCK readLock;
         BYTE* bufferAddress;
         UINT head;
         UINT tail;
-        UINT available;
         UINT bufferSize;
         UINT modFactor;
         KEVENT dataWrite;
@@ -34,9 +35,9 @@
 
 	NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, UINT length, BOOLEAN isLocked);
 
-	UINT ReadEthFrameFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* destinationBuffer);
+	NTSTATUS ReadBlockFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* destinationBuffer);
 
-    NTSTATUS WriteEthFrameToRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, UINT length, FILTER_CONTEXT* context, TRANSFER_DIRECION transferDirection);
+    NTSTATUS WriteBlockToRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer);
 
 
 #endif

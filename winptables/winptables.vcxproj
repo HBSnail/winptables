@@ -142,7 +142,7 @@
       <WarningLevel>Level4</WarningLevel>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ndis.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ndis.lib;netio.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -170,6 +170,9 @@
     <ClInclude Include="global.h" />
     <ClInclude Include="ring_buffer.h" />
     <ClInclude Include="winptables_comm_device.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Text.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
