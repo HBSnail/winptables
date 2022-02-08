@@ -26,9 +26,10 @@ UNICODE_STRING deviceName;
 UNICODE_STRING linkName;
 DEVICE_OBJECT* winptablesCommunicationDevice;
 
+NPAGED_LOOKASIDE_LIST ringBufferBlockPoolList;
 
 VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocatePoolWithTag(NonPagedPool, RING_BUFFER_BLOCK_SIZE, TEMP_POOL_ALLOC_TAG);
+	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
 	
 	while (1) {
 
@@ -47,21 +48,21 @@ VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
 			//Ring buffer block structure:
 			//ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
-			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 4);
-			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 8);
+			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 0);
+			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 4);
 
 			FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
 			if (fContext == NULL) {
 				break;
 			}
 
-			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 12, FilterToUpper, NO_FLAG);
+			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 8, FilterToUpper, NO_FLAG);
 
 		} while (FALSE);
 
 	}
 
-	ExFreePoolWithTag(dataBuffer, TEMP_POOL_ALLOC_TAG);
+	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
 	DbgPrint("THREAD TERMINATE\n");
 	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
 	DbgPrint("THREAD TERMINATE %d\n", s);
@@ -69,7 +70,7 @@ VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
 }
 
 VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocatePoolWithTag(NonPagedPool, RING_BUFFER_BLOCK_SIZE, TEMP_POOL_ALLOC_TAG);
+	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
 
 	while (1) {
 
@@ -88,21 +89,21 @@ VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
 			//Ring buffer block structure:
 			//ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
-			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 4);
-			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 8);
+			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 0);
+			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 4);
 
 			FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
 			if (fContext == NULL) {
 				break;
 			}
 
-			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 12, FilterToNIC, NO_FLAG);
+			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 8, FilterToNIC, NO_FLAG);
 
 		} while (FALSE);
 
 	}
 
-	ExFreePoolWithTag(dataBuffer, TEMP_POOL_ALLOC_TAG);
+	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
 	DbgPrint("THREAD TERMINATE\n");
 	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
 	DbgPrint("THREAD TERMINATE %d\n", s);
@@ -111,7 +112,7 @@ VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
 
 
 VOID TestingRoutine1(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocatePoolWithTag(NonPagedPool, RING_BUFFER_BLOCK_SIZE, TEMP_POOL_ALLOC_TAG);
+	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
 
 	while (1) {
 
@@ -136,7 +137,7 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 
 	}
 
-	ExFreePoolWithTag(dataBuffer, TEMP_POOL_ALLOC_TAG);
+	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
 	DbgPrint("THREAD TERMINATE\n");
 	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
 	DbgPrint("THREAD TERMINATE %d\n", s);
@@ -144,7 +145,7 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 }
 
 VOID TestingRoutine2(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocatePoolWithTag(NonPagedPool, RING_BUFFER_BLOCK_SIZE, TEMP_POOL_ALLOC_TAG);
+	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
 
 	while (1) {
 
@@ -169,7 +170,7 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 
 	}
 
-	ExFreePoolWithTag(dataBuffer, TEMP_POOL_ALLOC_TAG);
+	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
 	DbgPrint("THREAD TERMINATE\n");
 	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
 	DbgPrint("THREAD TERMINATE %d\n", s);
@@ -197,6 +198,8 @@ Return Value:
 VOID DriverUnload(DRIVER_OBJECT* driverObject) {
 
 	DbgPrint("DriverUnload\n");
+
+	ExDeleteNPagedLookasideList(&ringBufferBlockPoolList);
 
 	NdisFDeregisterFilterDriver(filterDriverHandle);
 
@@ -340,6 +343,10 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		driverObject->MajorFunction[IRP_MJ_READ] = WPTCommDeviceRead;
 		driverObject->MajorFunction[IRP_MJ_WRITE] = WPTCommDeviceWrite;
 
+
+		ExInitializeNPagedLookasideList(&ringBufferBlockPoolList, NULL, NULL, 0, RING_BUFFER_BLOCK_SIZE, ETH_FRAME_POOL_ALLOC_TAG, 0);
+
+
 		//Init the ring buffer which can share data with Ring3
 		//20 means 1<<20 Bytes = 1MB
 		//Init ring buffer with size of 1MB
@@ -389,7 +396,6 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 			break;
 		}
 
-		
 		//Create thread handling the user2kernelRingBuffer
 		HANDLE readingThread = NULL ;
 		status = PsCreateSystemThread(&readingThread,0,NULL,NULL,NULL, (PKSTART_ROUTINE)TransmitRoutine_INBOUND, NULL);

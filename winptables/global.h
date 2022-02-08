@@ -33,7 +33,6 @@
     #define FILTER_ALLOC_TAG 'FTAT'
     #define RING_BUFFER_ALLOC_TAG 'RBAT'
     #define SEND_POOL_ALLOC_TAG 'SPAT'
-    #define TEMP_POOL_ALLOC_TAG 'TPAT'
     #define ETH_FRAME_POOL_ALLOC_TAG 'EFPT'
 
     typedef UCHAR BYTE;
@@ -78,6 +77,8 @@
 
         NDIS_STRING filterName;
 
+        VOID* ethMDLSpaceCache;
+        MDL* ethMDLCache;
     }FILTER_CONTEXT;
 
 
