@@ -26,155 +26,6 @@ DEVICE_OBJECT* winptablesCommunicationDevice;
 
 NPAGED_LOOKASIDE_LIST ringBufferBlockPoolList;
 
-VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
-	
-	while (1) {
-
-		if (dataBuffer == NULL) {
-			return;
-		}
-		do {
-
-			NTSTATUS status = ReadBlockFromRingBuffer(&user2kernelRingBuffer_INBOUND, dataBuffer);
-
-
-			if (!NT_SUCCESS(status)) {
-				break;
-			}
-
-			//Ring buffer block structure:
-			//ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
-
-			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 0);
-			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 4);
-
-			FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
-			if (fContext == NULL) {
-				break;
-			}
-
-			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 8, FilterToUpper, NO_FLAG);
-
-		} while (FALSE);
-
-	}
-
-	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
-	DbgPrint("THREAD TERMINATE\n");
-	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
-	DbgPrint("THREAD TERMINATE %d\n", s);
-
-}
-
-VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
-
-	while (1) {
-
-		if (dataBuffer == NULL) {
-			return;
-		}
-		do {
-
-			NTSTATUS status = ReadBlockFromRingBuffer(&user2kernelRingBuffer_OUTBOUND, dataBuffer);
-
-
-			if (!NT_SUCCESS(status)) {
-				break;
-			}
-
-			//Ring buffer block structure:
-			//ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
-
-			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 0);
-			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 4);
-
-			FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
-			if (fContext == NULL) {
-				break;
-			}
-
-			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 8, FilterToNIC, NO_FLAG);
-
-		} while (FALSE);
-
-	}
-
-	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
-	DbgPrint("THREAD TERMINATE\n");
-	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
-	DbgPrint("THREAD TERMINATE %d\n", s);
-
-}
-
-
-VOID TestingRoutine1(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
-
-	while (1) {
-
-		if (dataBuffer == NULL) {
-			return;
-		}
-		do {
-
-			NTSTATUS status = ReadBlockFromRingBuffer(&kernel2userRingBuffer_INBOUND, dataBuffer);
-
-
-			if (!NT_SUCCESS(status)) {
-				break;
-			}
-
-			//Ring buffer block structure:
-			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
-			
-			WriteBlockToRingBuffer(&user2kernelRingBuffer_INBOUND, dataBuffer);
-
-		} while (FALSE);
-
-	}
-
-	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
-	DbgPrint("THREAD TERMINATE\n");
-	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
-	DbgPrint("THREAD TERMINATE %d\n", s);
-
-}
-
-VOID TestingRoutine2(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
-
-	while (1) {
-
-		if (dataBuffer == NULL) {
-			return;
-		}
-		do {
-
-			NTSTATUS status = ReadBlockFromRingBuffer(&kernel2userRingBuffer_OUTBOUND, dataBuffer);
-
-
-			if (!NT_SUCCESS(status)) {
-				break;
-			}
-
-			//Ring buffer block structure:
-			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
-
-			WriteBlockToRingBuffer(&user2kernelRingBuffer_OUTBOUND, dataBuffer);
-
-		} while (FALSE);
-
-	}
-
-	ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
-	DbgPrint("THREAD TERMINATE\n");
-	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
-	DbgPrint("THREAD TERMINATE %d\n", s);
-
-}
-
 
 
 /*++
@@ -198,6 +49,8 @@ VOID DriverUnload(DRIVER_OBJECT* driverObject) {
 	DbgPrint("DriverUnload\n");
 
 	ExDeleteNPagedLookasideList(&ringBufferBlockPoolList);
+
+	NdisFreeSpinLock(&filterListLock);
 
 	NdisFDeregisterFilterDriver(filterDriverHandle);
 
@@ -314,14 +167,17 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		//RtlInitUnicodeString(&deviceName, WINPTABLES_COMMUNICATION_DEVICE_NAME);
 		status = IoCreateDevice(driverObject, 0, &(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_NAME), FILE_DEVICE_UNKNOWN, 0, TRUE, &winptablesCommunicationDevice);
 
+
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
 			NdisFDeregisterFilterDriver(filterDriverHandle);
 			break;
 		}
 
+
 		//Use direct IO instead of buffering IO for high speed
 		winptablesCommunicationDevice->Flags |= DO_DIRECT_IO;
+
 
 		//Create a symbolic link for the device
 		//RtlInitUnicodeString(&linkName, WINPTABLES_COMMUNICATION_DEVICE_LINK);
@@ -343,113 +199,6 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 
 
 		ExInitializeNPagedLookasideList(&ringBufferBlockPoolList, NULL, NULL, 0, RING_BUFFER_BLOCK_SIZE, ETH_FRAME_POOL_ALLOC_TAG, 0);
-
-
-		//Init the ring buffer which can share data with Ring3
-		//20 means 1<<20 Bytes = 1MB
-		//Init ring buffer with size of 1MB
-		status = InitRingBuffer(&kernel2userRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent1"));
-
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			break;
-		}
-
-		status = InitRingBuffer(&kernel2userRingBuffer_OUTBOUND, 20,  &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent2"));
-
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			break;
-		}
-
-		status = InitRingBuffer(&user2kernelRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent3"));
-
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			break;
-		}
-
-		status = InitRingBuffer(&user2kernelRingBuffer_OUTBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent4"));
-
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-
-		//Create thread handling the user2kernelRingBuffer
-		HANDLE readingThread = NULL ;
-		status = PsCreateSystemThread(&readingThread,0,NULL,NULL,NULL, (PKSTART_ROUTINE)TransmitRoutine_INBOUND, NULL);
-		status =  ZwClose(readingThread);
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-
-		status = PsCreateSystemThread(&readingThread, 0, NULL, NULL, NULL, (PKSTART_ROUTINE)TransmitRoutine_OUTBOUND, NULL);
-		status =  ZwClose(readingThread);
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-
-
-		status = PsCreateSystemThread(&readingThread, 0, NULL, NULL, NULL, (PKSTART_ROUTINE)TestingRoutine1, NULL);
-		status = ZwClose(readingThread);
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-
-		status = PsCreateSystemThread(&readingThread, 0, NULL, NULL, NULL, (PKSTART_ROUTINE)TestingRoutine2, NULL);
-		status = ZwClose(readingThread);
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-
-		
 
 
 	} while (FALSE);

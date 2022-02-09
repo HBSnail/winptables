@@ -16,6 +16,7 @@ extern NDIS_HANDLE filterDriverObject;
 extern NDIS_SPIN_LOCK filterListLock;
 extern LIST_ENTRY filterModuleList;
 extern NPAGED_LOOKASIDE_LIST ringBufferBlockPoolList;
+extern BOOLEAN ringBufferReadyFlag;
 
 RING_BUFFER kernel2userRingBuffer_INBOUND;
 RING_BUFFER kernel2userRingBuffer_OUTBOUND;
@@ -484,11 +485,11 @@ VOID WPTReceivedFromNIC(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netBuf
 		}
 
 
-		WriteNBLIntoRingBuffer(&kernel2userRingBuffer_INBOUND, netBufferLists, NICToFilter, filterContext->miniportIfIndex);
-
+		if (ringBufferReadyFlag) {
+			WriteNBLIntoRingBuffer(&kernel2userRingBuffer_INBOUND, netBufferLists, NICToFilter, filterContext->miniportIfIndex);
+		}
 
 		NdisFReturnNetBufferLists(filterContext->filterHandle, netBufferLists, receiveFlags);
-		//NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, numberOfNetBufferLists, receiveFlags);
 
 	} while (FALSE);
 
@@ -561,12 +562,11 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 			break;
 		}
 
-
-		WriteNBLIntoRingBuffer(&kernel2userRingBuffer_OUTBOUND, netBufferLists, UpperToFilter, filterContext->miniportIfIndex);
-
+		if (ringBufferReadyFlag) {
+			WriteNBLIntoRingBuffer(&kernel2userRingBuffer_OUTBOUND, netBufferLists, UpperToFilter, filterContext->miniportIfIndex);
+		}
 
 		NdisFSendNetBufferListsComplete(filterContext->filterHandle, netBufferLists, sendFlags);
-		//NdisFSendNetBufferLists(filterContext->filterHandle, netBufferLists, portNumber, sendFlags);
 
 	} while (FALSE);
 

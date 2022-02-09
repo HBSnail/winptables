@@ -9,12 +9,16 @@
 #include "winptables_comm_device.h"
 #include "ring_buffer.h"
 #include "filter_subroutines.h"
+#include "transfer_routines.h"
 
 extern NDIS_HANDLE filterDriverHandle;
 extern RING_BUFFER kernel2userRingBuffer_INBOUND;
 extern RING_BUFFER kernel2userRingBuffer_OUTBOUND;
 extern RING_BUFFER user2kernelRingBuffer_INBOUND;
 extern RING_BUFFER user2kernelRingBuffer_OUTBOUND;
+
+
+BOOLEAN ringBufferReadyFlag = FALSE;
 
 NTSTATUS WPTCommDeviceCreate(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	NTSTATUS status = STATUS_SUCCESS;
@@ -70,7 +74,7 @@ NTSTATUS WPTCommDeviceRead(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	
 		if (kernelAddr != NULL) {
 
-			MDL* kernel2userRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_INBOUND.bufferAddress, kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+			/*MDL* kernel2userRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_INBOUND.bufferAddress, kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
 			MDL* kernel2userRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_OUTBOUND.bufferAddress, kernel2userRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
 			MDL* user2kernelRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_INBOUND.bufferAddress, user2kernelRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
 			MDL* user2kernelRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_OUTBOUND.bufferAddress, user2kernelRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
@@ -82,7 +86,12 @@ NTSTATUS WPTCommDeviceRead(DEVICE_OBJECT* deviceObject, IRP* irp) {
 			NdisMoveMemory(kernelAddr + sizeof(VOID*) * 0, &kernel2userRingBuffer_INBOUND_UserAddr, sizeof(VOID*));
 			NdisMoveMemory(kernelAddr + sizeof(VOID*) * 1, &kernel2userRingBuffer_OUTBOUND_UserAddr, sizeof(VOID*));
 			NdisMoveMemory(kernelAddr + sizeof(VOID*) * 2, &user2kernelRingBuffer_INBOUND_UserAddr, sizeof(VOID*));
-			NdisMoveMemory(kernelAddr + sizeof(VOID*) * 3, &user2kernelRingBuffer_OUTBOUND_UserAddr, sizeof(VOID*));
+			NdisMoveMemory(kernelAddr + sizeof(VOID*) * 3, &user2kernelRingBuffer_OUTBOUND_UserAddr, sizeof(VOID*));*/
+			if (ringBufferReadyFlag == FALSE and NT_SUCCESS(InitTransferRoutine())) {
+				DbgPrint("TRANSFER_FLAG_ENABLE\n");
+				ringBufferReadyFlag = TRUE;
+			}  
+
 		}
 
 		irp->IoStatus.Information = sizeof(VOID*) * 4 ;

@@ -36,10 +36,13 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN U
 
 	do {
 
+
 		if (ringBuffer == NULL) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
+
+		ringBuffer->bufferAddress = NULL;
 		ULONG length = (1 << powerOf2length);
 
 		if (length == 0) {
@@ -60,7 +63,6 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN U
 		NdisAllocateSpinLock(&(ringBuffer->writeLock));
 
 		if (&ringBuffer->writeLock == NULL) {
-			NdisFreeSpinLock(&ringBuffer->readLock);
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
@@ -68,23 +70,26 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN U
 		ringBuffer->bufferAddress = ExAllocatePoolWithTag(NonPagedPool, length, RING_BUFFER_ALLOC_TAG);
 		if (ringBuffer->bufferAddress == NULL) {
 			status = STATUS_UNSUCCESSFUL;
-			NdisFreeSpinLock(&ringBuffer->readLock);
-			NdisFreeSpinLock(&ringBuffer->writeLock);
-			break;
-		}
-
-		ringBuffer->dataBlockWrite = IoCreateSynchronizationEvent(syncEventName,&ringBuffer->dataBlockWriteEventHandle);
-
-		if (ringBuffer->dataBlockWrite == NULL) {
-			status = STATUS_UNSUCCESSFUL;
-			NdisFreeSpinLock(&ringBuffer->readLock);
-			NdisFreeSpinLock(&ringBuffer->writeLock);
-			ExFreePoolWithTag(ringBuffer->bufferAddress, RING_BUFFER_ALLOC_TAG);
 			break;
 		}
 
 		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize = length;
 		ringBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor = length - 1;
+
+		ringBuffer->dataBlockWrite = ExAllocatePool(NonPagedPool, sizeof(KEVENT));
+
+		if (ringBuffer->dataBlockWrite == NULL) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		//KeInitializeEvent(ringBuffer->dataBlockWrite, SynchronizationEvent, FALSE);
+		ringBuffer->dataBlockWrite = IoCreateSynchronizationEvent(syncEventName,&ringBuffer->dataBlockWriteEventHandle);
+
+		if (ringBuffer->dataBlockWrite == NULL) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
 
 
 	} while (FALSE);
@@ -119,6 +124,10 @@ VOID FreeRingBuffer(IN RING_BUFFER* ringBuffer) {
 		ringBuffer->bufferAddress = NULL;
 	}
 
+	if (ringBuffer->dataBlockWrite != NULL) {
+		KeSetEvent(ringBuffer->dataBlockWrite, IO_NO_INCREMENT, FALSE);
+	}
+	
 	ZwClose(ringBuffer->dataBlockWriteEventHandle);
 
 	NdisFreeSpinLock(&ringBuffer->writeLock);
