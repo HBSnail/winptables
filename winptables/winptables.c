@@ -22,8 +22,6 @@ RING_BUFFER kernel2userRingBuffer_OUTBOUND;
 RING_BUFFER user2kernelRingBuffer_INBOUND;
 RING_BUFFER user2kernelRingBuffer_OUTBOUND;
 
-UNICODE_STRING deviceName;
-UNICODE_STRING linkName;
 DEVICE_OBJECT* winptablesCommunicationDevice;
 
 NPAGED_LOOKASIDE_LIST ringBufferBlockPoolList;
@@ -203,7 +201,7 @@ VOID DriverUnload(DRIVER_OBJECT* driverObject) {
 
 	NdisFDeregisterFilterDriver(filterDriverHandle);
 
-	IoDeleteSymbolicLink(&linkName);
+	IoDeleteSymbolicLink(&(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_LINK));
 
 	IoDeleteDevice(winptablesCommunicationDevice);
 
@@ -313,8 +311,8 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		driverObject->DriverUnload = DriverUnload;
 
 		//Create the device to communicate with Ring3 
-		RtlInitUnicodeString(&deviceName, WINPTABLES_COMMUNICATION_DEVICE_NAME);
-		status = IoCreateDevice(driverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &winptablesCommunicationDevice);
+		//RtlInitUnicodeString(&deviceName, WINPTABLES_COMMUNICATION_DEVICE_NAME);
+		status = IoCreateDevice(driverObject, 0, &(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_NAME), FILE_DEVICE_UNKNOWN, 0, TRUE, &winptablesCommunicationDevice);
 
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
@@ -326,8 +324,8 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		winptablesCommunicationDevice->Flags |= DO_DIRECT_IO;
 
 		//Create a symbolic link for the device
-		RtlInitUnicodeString(&linkName, WINPTABLES_COMMUNICATION_DEVICE_LINK);
-		status = IoCreateSymbolicLink(&linkName, &deviceName);
+		//RtlInitUnicodeString(&linkName, WINPTABLES_COMMUNICATION_DEVICE_LINK);
+		status = IoCreateSymbolicLink(&(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_LINK), & (UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_NAME));
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
 			NdisFDeregisterFilterDriver(filterDriverHandle);
@@ -350,7 +348,7 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		//Init the ring buffer which can share data with Ring3
 		//20 means 1<<20 Bytes = 1MB
 		//Init ring buffer with size of 1MB
-		status = InitRingBuffer(&kernel2userRingBuffer_INBOUND, 20);
+		status = InitRingBuffer(&kernel2userRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent1"));
 
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
@@ -360,7 +358,7 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 			break;
 		}
 
-		status = InitRingBuffer(&kernel2userRingBuffer_OUTBOUND, 20);
+		status = InitRingBuffer(&kernel2userRingBuffer_OUTBOUND, 20,  &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent2"));
 
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
@@ -371,7 +369,7 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 			break;
 		}
 
-		status = InitRingBuffer(&user2kernelRingBuffer_INBOUND, 20);
+		status = InitRingBuffer(&user2kernelRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent3"));
 
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
@@ -383,7 +381,7 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 			break;
 		}
 
-		status = InitRingBuffer(&user2kernelRingBuffer_OUTBOUND, 20);
+		status = InitRingBuffer(&user2kernelRingBuffer_OUTBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent4"));
 
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);

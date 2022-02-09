@@ -10,9 +10,9 @@
 
 
 ULONG GetRingBufferAvailable(RING_BUFFER* ringBuffer) {
-	return ((ringBuffer->head) >= (ringBuffer->tail)) ?
-		((ringBuffer->head) - (ringBuffer->tail)) :
-		ringBuffer->bufferSize - (ringBuffer->tail) + (ringBuffer->head);
+	return ((ringBuffer->RING_BUFFER_SHARED_VARIABLES.head) >= (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail)) ?
+		((ringBuffer->RING_BUFFER_SHARED_VARIABLES.head) - (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail)) :
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize - (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail) + (ringBuffer->RING_BUFFER_SHARED_VARIABLES.head);
 }
  /*++
 
@@ -30,7 +30,7 @@ ULONG GetRingBufferAvailable(RING_BUFFER* ringBuffer) {
 	 NTSTATUS indecate if the ring buffer init successful
 
  --*/
-NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length) {
+NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN UNICODE_STRING* syncEventName) {
 
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -47,8 +47,8 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length) {
 			break;
 		}
 
-		ringBuffer->head = 0;
-		ringBuffer->tail = 0;
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.head = 0;
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail = 0;
 
 		NdisAllocateSpinLock(&(ringBuffer->readLock));
 
@@ -73,11 +73,18 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length) {
 			break;
 		}
 
+		ringBuffer->dataBlockWrite = IoCreateSynchronizationEvent(syncEventName,&ringBuffer->dataBlockWriteEventHandle);
 
-		KeInitializeEvent(&ringBuffer->dataWrite, SynchronizationEvent,FALSE);
+		if (ringBuffer->dataBlockWrite == NULL) {
+			status = STATUS_UNSUCCESSFUL;
+			NdisFreeSpinLock(&ringBuffer->readLock);
+			NdisFreeSpinLock(&ringBuffer->writeLock);
+			ExFreePoolWithTag(ringBuffer->bufferAddress, RING_BUFFER_ALLOC_TAG);
+			break;
+		}
 
-		ringBuffer->bufferSize = length;
-		ringBuffer->modFactor = length - 1;
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize = length;
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor = length - 1;
 
 
 	} while (FALSE);
@@ -112,13 +119,15 @@ VOID FreeRingBuffer(IN RING_BUFFER* ringBuffer) {
 		ringBuffer->bufferAddress = NULL;
 	}
 
+	ZwClose(ringBuffer->dataBlockWriteEventHandle);
+
 	NdisFreeSpinLock(&ringBuffer->writeLock);
 	NdisFreeSpinLock(&ringBuffer->readLock);
 
-	ringBuffer->head = 0;
-	ringBuffer->tail = 0;
-	ringBuffer->bufferSize = 0;
-	ringBuffer->modFactor = 0;
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.head = 0;
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail = 0;
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize = 0;
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor = 0;
 
 }
 
@@ -152,21 +161,21 @@ NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuff
 	}
 
 	//Check if the ring buffer has space to write
-	if (GetRingBufferAvailable  (destinationRingBuffer) + length < destinationRingBuffer->bufferSize) {
+	if (GetRingBufferAvailable  (destinationRingBuffer) + length < destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize) {
 
 		//If it has free space, check whether needs turning
-		if (destinationRingBuffer->head + length < destinationRingBuffer->bufferSize) {
+		if (destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head + length < destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize) {
 			//Direct copy memory
-			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->head, (BYTE*)sourceBuffer, length);
+			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head, (BYTE*)sourceBuffer, length);
 		}
 		else {
 			//Get the length and copy twice
-			ULONG partLength = destinationRingBuffer->bufferSize - destinationRingBuffer->head;
-			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->head, (BYTE*)sourceBuffer, partLength);
+			ULONG partLength = destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize - destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head;
+			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head, (BYTE*)sourceBuffer, partLength);
 			NdisMoveMemory(destinationRingBuffer->bufferAddress, (BYTE*)sourceBuffer + partLength, length - partLength);
 		}
 
-		destinationRingBuffer->head = (destinationRingBuffer->head + length) & (destinationRingBuffer->modFactor);
+		destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head = (destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head + length) & (destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor);
 
 	}
 	else {
@@ -218,18 +227,18 @@ NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffe
 	if (GetRingBufferAvailable(sourceRingBuffer) >= length) {
 
 
-		if (sourceRingBuffer->tail + length < sourceRingBuffer->bufferSize) {
+		if (sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail + length < sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize) {
 			//Direct copy memory
-			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->tail, length);
+			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail, length);
 		}
 		else {
 			//Get the length and copy twice
-			ULONG partLength = sourceRingBuffer->bufferSize - sourceRingBuffer->tail;
-			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->tail, partLength);
+			ULONG partLength = sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize - sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail;
+			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail, partLength);
 			NdisMoveMemory((BYTE*)destinationBuffer + partLength, sourceRingBuffer->bufferAddress, length - partLength);
 		}
 
-		sourceRingBuffer->tail = (sourceRingBuffer->tail + length) & (sourceRingBuffer->modFactor);
+		sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail = (sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail + length) & (sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor);
 
 	}
 	else {
@@ -271,7 +280,7 @@ NTSTATUS ReadBlockFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* dest
 	//Warning!!!
 	//DO NOT attempt wait for a event/semaphore when holding the spin lock, otherwise it may cause deadlock.
 	while (GetRingBufferAvailable(sourceRingBuffer) < RING_BUFFER_BLOCK_SIZE) {
-		KeWaitForSingleObject(&sourceRingBuffer->dataWrite, Executive, KernelMode, FALSE, NULL);
+		KeWaitForSingleObject(sourceRingBuffer->dataBlockWrite, Executive, KernelMode, FALSE, NULL);
 	}
 
 	return ReadRingBuffer(sourceRingBuffer, destinationBuffer, RING_BUFFER_BLOCK_SIZE, FALSE);
@@ -302,7 +311,7 @@ NTSTATUS WriteBlockToRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sou
 	status = WriteRingBuffer(destinationRingBuffer, sourceBuffer, RING_BUFFER_BLOCK_SIZE, FALSE);
 
 	if (NT_SUCCESS(status)) {
-		KeSetEvent(&destinationRingBuffer->dataWrite, IO_NO_INCREMENT, FALSE);
+		KeSetEvent(destinationRingBuffer->dataBlockWrite, IO_NO_INCREMENT, FALSE);
 	}
 
 	return status;

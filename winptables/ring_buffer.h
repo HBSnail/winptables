@@ -15,19 +15,23 @@
 
     typedef struct _RING_BUFFER
     {
+        struct _RING_BUFFER_SHARED_VARIABLES
+        {
+            ULONG head;
+            ULONG tail;
+            ULONG bufferSize;
+            ULONG modFactor;
+        }RING_BUFFER_SHARED_VARIABLES;
 
+        KEVENT* dataBlockWrite;
+        HANDLE dataBlockWriteEventHandle;
         NDIS_SPIN_LOCK writeLock;
         NDIS_SPIN_LOCK readLock;
         BYTE* bufferAddress;
-        ULONG head;
-        ULONG tail;
-        ULONG bufferSize;
-        ULONG modFactor;
-        KEVENT dataWrite;
 
     }RING_BUFFER;
 
-	NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length);
+    NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length, IN UNICODE_STRING* syncEventName);
 
 	VOID FreeRingBuffer(IN RING_BUFFER* ringBuffer);
 

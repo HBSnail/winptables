@@ -70,10 +70,10 @@ NTSTATUS WPTCommDeviceRead(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	
 		if (kernelAddr != NULL) {
 
-			MDL* kernel2userRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_INBOUND.bufferAddress, kernel2userRingBuffer_INBOUND.bufferSize);
-			MDL* kernel2userRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_OUTBOUND.bufferAddress, kernel2userRingBuffer_OUTBOUND.bufferSize);
-			MDL* user2kernelRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_INBOUND.bufferAddress, user2kernelRingBuffer_INBOUND.bufferSize);
-			MDL* user2kernelRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_OUTBOUND.bufferAddress, user2kernelRingBuffer_OUTBOUND.bufferSize);
+			MDL* kernel2userRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_INBOUND.bufferAddress, kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+			MDL* kernel2userRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_OUTBOUND.bufferAddress, kernel2userRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+			MDL* user2kernelRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_INBOUND.bufferAddress, user2kernelRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+			MDL* user2kernelRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_OUTBOUND.bufferAddress, user2kernelRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
 			VOID* kernel2userRingBuffer_INBOUND_UserAddr = MmMapLockedPagesSpecifyCache(kernel2userRingBuffer_INBOUND_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
 			VOID* kernel2userRingBuffer_OUTBOUND_UserAddr = MmMapLockedPagesSpecifyCache(kernel2userRingBuffer_OUTBOUND_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
 			VOID* user2kernelRingBuffer_INBOUND_UserAddr = MmMapLockedPagesSpecifyCache(user2kernelRingBuffer_INBOUND_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
