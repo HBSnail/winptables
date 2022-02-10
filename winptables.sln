@@ -5,24 +5,36 @@ VisualStudioVersion = 16.0.31613.86
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "winptables", "winptables\winptables.vcxproj", "{092F2F0D-D2F8-432B-9963-756F267C62ED}"
 EndProject
-Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "WinptablesService", "WinptablesService\WinptablesService.vbproj", "{2EB9DDA0-4E07-4C53-973D-D6CC5AF4B4F2}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WinptablesService", "WinptablesService\WinptablesService.vcxproj", "{06B03C3B-56BB-49DF-AD0B-1399DF825038}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|x64 = Release|x64
+		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Debug|x64.ActiveCfg = Debug|x64
 		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Debug|x64.Build.0 = Debug|x64
 		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Debug|x64.Deploy.0 = Debug|x64
+		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Debug|x86.ActiveCfg = Debug|Win32
+		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Debug|x86.Build.0 = Debug|Win32
+		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Debug|x86.Deploy.0 = Debug|Win32
 		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Release|x64.ActiveCfg = Release|x64
 		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Release|x64.Build.0 = Release|x64
 		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Release|x64.Deploy.0 = Release|x64
-		{2EB9DDA0-4E07-4C53-973D-D6CC5AF4B4F2}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{2EB9DDA0-4E07-4C53-973D-D6CC5AF4B4F2}.Debug|x64.Build.0 = Debug|Any CPU
-		{2EB9DDA0-4E07-4C53-973D-D6CC5AF4B4F2}.Release|x64.ActiveCfg = Release|Any CPU
-		{2EB9DDA0-4E07-4C53-973D-D6CC5AF4B4F2}.Release|x64.Build.0 = Release|Any CPU		
+		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Release|x86.ActiveCfg = Release|Win32
+		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Release|x86.Build.0 = Release|Win32
+		{092F2F0D-D2F8-432B-9963-756F267C62ED}.Release|x86.Deploy.0 = Release|Win32
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Debug|x64.ActiveCfg = Debug|x64
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Debug|x64.Build.0 = Debug|x64
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Debug|x86.ActiveCfg = Debug|Win32
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Debug|x86.Build.0 = Debug|Win32
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Release|x64.ActiveCfg = Release|x64
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Release|x64.Build.0 = Release|x64
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Release|x86.ActiveCfg = Release|Win32
+		{06B03C3B-56BB-49DF-AD0B-1399DF825038}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

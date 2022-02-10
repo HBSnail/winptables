@@ -10,6 +10,8 @@
 #include "ring_buffer.h"
 #include "winptables_comm_device.h"
 
+extern BOOLEAN threadFLAG;
+
 
 NDIS_HANDLE filterDriverHandle = NULL;
 NDIS_HANDLE filterDriverObject = NULL;
@@ -47,6 +49,8 @@ Return Value:
 VOID DriverUnload(DRIVER_OBJECT* driverObject) {
 
 	DbgPrint("DriverUnload\n");
+
+	threadFLAG = FALSE;
 
 	ExDeleteNPagedLookasideList(&ringBufferBlockPoolList);
 
@@ -176,7 +180,7 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 
 
 		//Use direct IO instead of buffering IO for high speed
-		winptablesCommunicationDevice->Flags |= DO_DIRECT_IO;
+		//winptablesCommunicationDevice->Flags |= DO_DIRECT_IO;
 
 
 		//Create a symbolic link for the device
