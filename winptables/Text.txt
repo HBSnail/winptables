@@ -13,3 +13,4 @@
 				destIP.si_family = 2;
 				GetBestRoute2(NULL, filterContext->miniportIfIndex, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);
 
+			

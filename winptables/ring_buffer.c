@@ -75,14 +75,16 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN U
 
 		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize = length;
 		ringBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor = length - 1;
-
+		ringBuffer->dataBlockWrite = NULL;
+		/*
 		ringBuffer->dataBlockWrite = ExAllocatePool(NonPagedPool, sizeof(KEVENT));
 
 		if (ringBuffer->dataBlockWrite == NULL) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-
+		*/
+		
 		//KeInitializeEvent(ringBuffer->dataBlockWrite, SynchronizationEvent, FALSE);
 		ringBuffer->dataBlockWrite = IoCreateSynchronizationEvent(syncEventName,&ringBuffer->dataBlockWriteEventHandle);
 
@@ -124,10 +126,6 @@ VOID FreeRingBuffer(IN RING_BUFFER* ringBuffer) {
 		ringBuffer->bufferAddress = NULL;
 	}
 
-	if (ringBuffer->dataBlockWrite != NULL) {
-		KeSetEvent(ringBuffer->dataBlockWrite, IO_NO_INCREMENT, FALSE);
-	}
-	
 	ZwClose(ringBuffer->dataBlockWriteEventHandle);
 
 	NdisFreeSpinLock(&ringBuffer->writeLock);

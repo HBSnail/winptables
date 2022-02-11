@@ -112,79 +112,6 @@ VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
 }
 
 
-VOID TestingRoutine1(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
-
-	while (threadFLAG) {
-
-		if (dataBuffer == NULL) {
-			return;
-		}
-		do {
-
-			NTSTATUS status = ReadBlockFromRingBuffer(&kernel2userRingBuffer_INBOUND, dataBuffer);
-
-
-			if (!NT_SUCCESS(status)) {
-				break;
-			}
-
-			//Ring buffer block structure:
-			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
-
-			WriteBlockToRingBuffer(&user2kernelRingBuffer_INBOUND, dataBuffer);
-
-		} while (FALSE);
-
-	}
-
-
-	if (dataBuffer != NULL) {
-		ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
-	}
-
-	DbgPrint("THREAD TERMINATE\n");
-	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
-	DbgPrint("THREAD TERMINATE %d\n", s);
-
-}
-
-VOID TestingRoutine2(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
-
-	while (threadFLAG) {
-
-		if (dataBuffer == NULL) {
-			return;
-		}
-		do {
-
-			NTSTATUS status = ReadBlockFromRingBuffer(&kernel2userRingBuffer_OUTBOUND, dataBuffer);
-
-
-			if (!NT_SUCCESS(status)) {
-				break;
-			}
-
-			//Ring buffer block structure:
-			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
-
-			WriteBlockToRingBuffer(&user2kernelRingBuffer_OUTBOUND, dataBuffer);
-
-		} while (FALSE);
-
-	}
-
-	if (dataBuffer != NULL) {
-		ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
-	}
-	
-	DbgPrint("THREAD TERMINATE\n");
-	NTSTATUS s = PsTerminateSystemThread(STATUS_SUCCESS);
-	DbgPrint("THREAD TERMINATE %d\n", s);
-
-}
-
 NTSTATUS InitTransferRoutine(){
 
 	NTSTATUS status = STATUS_SUCCESS;
@@ -194,14 +121,14 @@ NTSTATUS InitTransferRoutine(){
 		//20 means 1<<20 Bytes = 1MB
 		//Init ring buffer with size of 1MB
 
-		status = InitRingBuffer(&kernel2userRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent1"));
+		status = InitRingBuffer(&kernel2userRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\winptables_ke_k2u_in"));
 
 		if (!NT_SUCCESS(status)) {
 			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
 			break;
 		}
 
-		status = InitRingBuffer(&kernel2userRingBuffer_OUTBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent2"));
+		status = InitRingBuffer(&kernel2userRingBuffer_OUTBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\winptables_ke_k2u_out"));
 
 		if (!NT_SUCCESS(status)) {
 			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
@@ -209,7 +136,7 @@ NTSTATUS InitTransferRoutine(){
 			break;
 		}
 
-		status = InitRingBuffer(&user2kernelRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent3"));
+		status = InitRingBuffer(&user2kernelRingBuffer_INBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\winptables_ke_u2k_in"));
 
 		if (!NT_SUCCESS(status)) {
 			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
@@ -218,7 +145,7 @@ NTSTATUS InitTransferRoutine(){
 			break;
 		}
 
-		status = InitRingBuffer(&user2kernelRingBuffer_OUTBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\Ring0KernelEvent4"));
+		status = InitRingBuffer(&user2kernelRingBuffer_OUTBOUND, 20, &(UNICODE_STRING)RTL_CONSTANT_STRING(L"\\BaseNamedObjects\\winptables_ke_u2k_out"));
 
 		if (!NT_SUCCESS(status)) {
 			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
@@ -268,45 +195,7 @@ NTSTATUS InitTransferRoutine(){
 			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
 			break;
 		}
-
-
-		status = PsCreateSystemThread(&readingThread, 0, NULL, NULL, NULL, (PKSTART_ROUTINE)TestingRoutine1, NULL);
-		if (!NT_SUCCESS(status)) {
-			threadFLAG = FALSE;
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-		status = ZwClose(readingThread);
-		if (!NT_SUCCESS(status)) {
-			threadFLAG = FALSE;
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-
-		status = PsCreateSystemThread(&readingThread, 0, NULL, NULL, NULL, (PKSTART_ROUTINE)TestingRoutine2, NULL);
-		if (!NT_SUCCESS(status)) {
-			threadFLAG = FALSE;
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
-		status = ZwClose(readingThread);
-		if (!NT_SUCCESS(status)) {
-			threadFLAG = FALSE;
-			FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
-			FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
-			FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
-			break;
-		}
+		
 
 	} while (FALSE);
 
