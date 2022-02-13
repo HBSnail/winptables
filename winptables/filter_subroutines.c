@@ -112,8 +112,6 @@ VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer, NET_BUFFER_LIST* netBufferL
 				continue;
 			}
 
-			NdisZeroMemory(freeRingBufferBlock, RING_BUFFER_BLOCK_SIZE);
-
 
 			VOID* ethDataPtr = NdisGetDataBuffer(netbuffer, netbuffer->DataLength, (BYTE*)freeRingBufferBlock + 8, 1, 0);
 			//The data in NBL is contiguous system will not auto copy the data, we shouled copy manually
