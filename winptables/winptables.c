@@ -52,7 +52,7 @@ VOID DriverUnload(DRIVER_OBJECT* driverObject) {
 
 	threadFLAG = FALSE;
 
-	ExDeleteNPagedLookasideList(&ringBufferBlockPoolList);
+	ExDeleteLookasideListEx(&ringBufferBlockPoolList);
 
 	NdisFreeSpinLock(&filterListLock);
 

@@ -16,12 +16,12 @@ extern RING_BUFFER user2kernelRingBuffer_INBOUND;
 extern RING_BUFFER user2kernelRingBuffer_OUTBOUND;
 
 
-extern NPAGED_LOOKASIDE_LIST ringBufferBlockPoolList;
+extern LOOKASIDE_LIST_EX ringBufferBlockPoolList;
 
 BOOLEAN threadFLAG;
 
 VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
+	VOID* dataBuffer = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
 
 	while (threadFLAG) {
 
@@ -56,7 +56,7 @@ VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
 
 
 	if (dataBuffer != NULL) {
-		ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
+		ExFreeToLookasideListEx(&ringBufferBlockPoolList, dataBuffer);
 	}
 
 
@@ -67,7 +67,7 @@ VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
 }
 
 VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
+	VOID* dataBuffer = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
 
 	while (threadFLAG) {
 
@@ -102,7 +102,7 @@ VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
 
 
 	if (dataBuffer != NULL) {
-		ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, dataBuffer);
+		ExFreeToLookasideListEx(&ringBufferBlockPoolList, dataBuffer);
 	}
 
 	DbgPrint("THREAD TERMINATE\n");

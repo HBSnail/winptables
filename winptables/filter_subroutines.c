@@ -15,7 +15,7 @@ extern NDIS_HANDLE filterDriverHandle;
 extern NDIS_HANDLE filterDriverObject;
 extern NDIS_SPIN_LOCK filterListLock;
 extern LIST_ENTRY filterModuleList;
-extern NPAGED_LOOKASIDE_LIST ringBufferBlockPoolList;
+extern LOOKASIDE_LIST_EX ringBufferBlockPoolList;
 extern BOOLEAN ringBufferReadyFlag;
 
 RING_BUFFER kernel2userRingBuffer_INBOUND;
@@ -31,19 +31,19 @@ NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, BYTE* et
 	do {
 
 		
-		VOID* ethMDLSpace = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
+		VOID* ethMDLSpace = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
 		if (ethMDLSpace == NULL) {
 			break;
 		}
 		MDL* ethMDL = NdisAllocateMdl(filterContext->filterHandle, ethMDLSpace, RING_BUFFER_BLOCK_SIZE);
 		if (ethMDL == NULL) {
-			ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, ethMDLSpace);
+			ExFreeToLookasideListEx(&ringBufferBlockPoolList, ethMDLSpace);
 			break;
 		}
 		NdisMoveMemory(ethMDLSpace, ethDataPtr, length);
 		NET_BUFFER_LIST* iNBLfromEthpacket = NdisAllocateNetBufferAndNetBufferList(filterContext->sendNetBufferListPool, 0, 0, ethMDL, 0, length);
 		if (iNBLfromEthpacket == NULL) {
-			ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, ethMDLSpace);
+			ExFreeToLookasideListEx(&ringBufferBlockPoolList, ethMDLSpace);
 			NdisFreeMdl(ethMDL);
 			break;
 		}
@@ -58,7 +58,7 @@ NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, BYTE* et
 			NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, iNBLfromEthpacket, NDIS_DEFAULT_PORT_NUMBER, 1, flag);
 		}
 		else {
-			ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, ethMDLSpace);
+			ExFreeToLookasideListEx(&ringBufferBlockPoolList, ethMDLSpace);
 			NdisFreeMdl(ethMDL);
 			break;
 		}
@@ -81,7 +81,7 @@ VOID WPTFreeNBL(NET_BUFFER_LIST* NetBufferLists) {
 		pMDL = NET_BUFFER_FIRST_MDL(currentBuffer);
 		npBuffer = MmGetSystemAddressForMdlSafe(pMDL, HighPagePriority | MdlMappingNoExecute);
 		if (npBuffer != NULL) {
-			ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, npBuffer);
+			ExFreeToLookasideListEx(&ringBufferBlockPoolList, npBuffer);
 		}
 		NdisFreeMdl(pMDL); //Free MDL
 		currentBuffer = NET_BUFFER_NEXT_NB(currentBuffer);
@@ -100,12 +100,11 @@ VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer, NET_BUFFER_LIST* netBufferL
 
 		for (NET_BUFFER* netbuffer = NET_BUFFER_LIST_FIRST_NB(currentNBL); netbuffer != NULL; netbuffer = NET_BUFFER_NEXT_NB(netbuffer)) {
 
-			if (netbuffer->DataLength >= (RING_BUFFER_BLOCK_SIZE - 12)) {
+			if (netbuffer->DataLength >= (RING_BUFFER_BLOCK_SIZE - 8)) {
 				//The frame is TOO LARGE
 				continue;
 			}
-
-			VOID* freeRingBufferBlock = ExAllocateFromNPagedLookasideList(&ringBufferBlockPoolList);
+			VOID* freeRingBufferBlock =ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
 
 			if (freeRingBufferBlock == NULL) {
 				//Memory ALLOC FAILED
@@ -129,7 +128,7 @@ VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer, NET_BUFFER_LIST* netBufferL
 
 			WriteBlockToRingBuffer(ringBuffer, freeRingBufferBlock);
 
-			ExFreeToNPagedLookasideList(&ringBufferBlockPoolList, freeRingBufferBlock);
+			ExFreeToLookasideListEx(&ringBufferBlockPoolList, freeRingBufferBlock);
 			freeRingBufferBlock = NULL;
 			ethDataPtr = NULL;
 
