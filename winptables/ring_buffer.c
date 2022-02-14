@@ -67,7 +67,7 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN U
 			break;
 		}
 
-		ringBuffer->bufferAddress = ExAllocatePoolWithTag(NonPagedPool, length, RING_BUFFER_ALLOC_TAG);
+		ringBuffer->bufferAddress = ExAllocatePoolWithTag(NonPagedPoolNx, length, RING_BUFFER_ALLOC_TAG);
 		if (ringBuffer->bufferAddress == NULL) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
@@ -76,16 +76,17 @@ NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN U
 		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize = length;
 		ringBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor = length - 1;
 		ringBuffer->dataBlockWrite = NULL;
+
 		/*
-		ringBuffer->dataBlockWrite = ExAllocatePool(NonPagedPool, sizeof(KEVENT));
+		ringBuffer->dataBlockWrite = ExAllocatePool(NonPagedPoolNx, sizeof(KEVENT));
 
 		if (ringBuffer->dataBlockWrite == NULL) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
+		KeInitializeEvent(ringBuffer->dataBlockWrite, SynchronizationEvent, FALSE);
 		*/
-		
-		//KeInitializeEvent(ringBuffer->dataBlockWrite, SynchronizationEvent, FALSE);
+
 		ringBuffer->dataBlockWrite = IoCreateSynchronizationEvent(syncEventName,&ringBuffer->dataBlockWriteEventHandle);
 
 		if (ringBuffer->dataBlockWrite == NULL) {

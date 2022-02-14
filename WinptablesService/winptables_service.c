@@ -10,14 +10,52 @@
 
 
 HANDLE commDevice;
+HANDLE refreshRouteTableHandle;
 
 RING_BUFFER_R3 kernel2userRingBuffer_INBOUND;
 RING_BUFFER_R3 kernel2userRingBuffer_OUTBOUND;
 RING_BUFFER_R3 user2kernelRingBuffer_INBOUND;
 RING_BUFFER_R3 user2kernelRingBuffer_OUTBOUND;
 
+typedef struct _ROUTE_INFO {
+	BOOLEAN canRoute;
+	BOOLEAN isLocal;
+	ULONG outIfIndex;
+}ROUTE_INFO;
 
 
+VOID RefreshRouteTable(VOID* must_null_ptr, PMIB_IPFORWARD_ROW2 Row, MIB_NOTIFICATION_TYPE NotificationType) {
+	
+}
+
+ROUTE_INFO GetRoute(BYTE* ethFrame) {
+	ROUTE_INFO retInfo;
+	//EthTypeCode is in big endian,convert to little endian!!!
+	USHORT etherFrameType = *((BYTE*)ethFrame + 12);
+	etherFrameType = (etherFrameType << 8) | (*((BYTE*)ethFrame + 13));
+	//Now we get the ethtype in little endian (x86-64)
+
+	switch (etherFrameType)
+	{
+	case 0x0800: //IPv4
+
+		break;
+	case 0x86DD: //IPv6
+
+		break;
+	default:
+
+		break;
+	}
+
+	/*SOCKADDR_INET destIP;
+	MIB_IPFORWARD_ROW2 forwardInfo;
+	SOCKADDR_INET bestSrcIP;
+	memset(&destIP, 0, sizeof(destIP));
+	destIP.si_family = 2;
+	GetBestRoute2(NULL, *(ULONG*)dataBuffer, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);*/
+
+}
 VOID TestingRoutine1(VOID* must_null_ptr) {
 	VOID* dataBuffer = malloc(RING_BUFFER_BLOCK_SIZE);
 	while (1) {
@@ -30,19 +68,6 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 
 			BOOLEAN success = ReadBlockFromRingBufferR3(&kernel2userRingBuffer_INBOUND,dataBuffer);
 
-
-			//EthTypeCode is in big endian,convert to little endian!!!
-			USHORT etherFrameType = *((BYTE*)dataBuffer + 20);
-			etherFrameType = (etherFrameType << 8) | (*((BYTE*)dataBuffer + 21));
-			//Now we get the ethtype in little endian (x86-64)
-
-
-			SOCKADDR_INET destIP;
-			MIB_IPFORWARD_ROW2 forwardInfo;
-			SOCKADDR_INET bestSrcIP;
-			memset(&destIP, 0,sizeof(destIP));
-			destIP.si_family = 2;
-			GetBestRoute2(NULL, *(ULONG*)dataBuffer, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);
 
 			if (!success) {
 				break;
@@ -115,6 +140,7 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 
 
 int main() {
+	NotifyRouteChange2(AF_UNSPEC, (PIPFORWARD_CHANGE_CALLBACK)RefreshRouteTable, NULL, TRUE, &refreshRouteTableHandle);
 
 	do {
 		commDevice = CreateFile(WINPTABLES_DEVICE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -221,6 +247,8 @@ int main() {
 		}
 		printf("[OK] winptables kernel-user syncheonize event (u2k_out) open success. HANDLE_VALUE: 0x%p\n", user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle);
 
+		
+		
 		CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestingRoutine1, NULL, 0, NULL);
 
 		CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestingRoutine2, NULL, 0, NULL);
@@ -229,11 +257,11 @@ int main() {
 		memset(kernel2userRingBuffer_OUTBOUND.sharedStructure.bufferAddress, 0, 32);
 		memset(kernel2userRingBuffer_INBOUND.bufferAddress, 0, 32);
 		memset(user2kernelRingBuffer_INBOUND.bufferAddress, 0, 32);*/
-		int t;
-		scanf_s("%d",&t);
+		
+		
 
 	} while (FALSE);
-
-
+	int t;
+	scanf_s("%d", &t);
 	return 0;
 }

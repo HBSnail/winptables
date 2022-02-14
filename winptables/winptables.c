@@ -26,7 +26,7 @@ RING_BUFFER user2kernelRingBuffer_OUTBOUND;
 
 DEVICE_OBJECT* winptablesCommunicationDevice;
 
-NPAGED_LOOKASIDE_LIST ringBufferBlockPoolList;
+LOOKASIDE_LIST_EX ringBufferBlockPoolList;
 
 
 
@@ -201,8 +201,7 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		driverObject->MajorFunction[IRP_MJ_READ] = WPTCommDeviceRead;
 		driverObject->MajorFunction[IRP_MJ_WRITE] = WPTCommDeviceWrite;
 
-
-		ExInitializeNPagedLookasideList(&ringBufferBlockPoolList, NULL, NULL, 0, RING_BUFFER_BLOCK_SIZE, ETH_FRAME_POOL_ALLOC_TAG, 0);
+		ExInitializeLookasideListEx(&ringBufferBlockPoolList, NULL, NULL, NonPagedPoolNx, 0, RING_BUFFER_BLOCK_SIZE, ETH_FRAME_POOL_ALLOC_TAG, 0);
 
 
 	} while (FALSE);
