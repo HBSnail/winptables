@@ -64,6 +64,8 @@ NTSTATUS WPTCommDeviceIOCtl(DEVICE_OBJECT* deviceObject, IRP* irp) {
 			ringBufferReadyFlag = TRUE;
 		}
 
+		//TODO: this may casue memory leak --->
+
 		MDL* kernel2userRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_INBOUND.bufferAddress, kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
 		MDL* kernel2userRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_OUTBOUND.bufferAddress, kernel2userRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
 		MDL* user2kernelRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_INBOUND.bufferAddress, user2kernelRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);

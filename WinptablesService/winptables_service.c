@@ -24,8 +24,11 @@ typedef struct _ROUTE_INFO {
 }ROUTE_INFO;
 
 
+
+
 VOID RefreshRouteTable(VOID* must_null_ptr, PMIB_IPFORWARD_ROW2 Row, MIB_NOTIFICATION_TYPE NotificationType) {
-	
+
+
 }
 
 ROUTE_INFO GetRoute(BYTE* ethFrame) {
@@ -58,15 +61,31 @@ ROUTE_INFO GetRoute(BYTE* ethFrame) {
 }
 VOID TestingRoutine1(VOID* must_null_ptr) {
 	VOID* dataBuffer = malloc(RING_BUFFER_BLOCK_SIZE);
+
+	if (dataBuffer == NULL) {
+		return;
+	}
+
 	while (1) {
 
-		if (dataBuffer == NULL) {
-			return;
-		}
 
 		do {
+			//QueueUserWorkItem((LPTHREAD_START_ROUTINE)TestingRoutine1, NULL, WT_EXECUTEDEFAULT);
+			BOOLEAN success = ReadBlockFromRingBufferR3(&kernel2userRingBuffer_INBOUND, dataBuffer);
 
-			BOOLEAN success = ReadBlockFromRingBufferR3(&kernel2userRingBuffer_INBOUND,dataBuffer);
+
+
+			//EthTypeCode is in big endian,convert to little endian!!!
+			USHORT etherFrameType = *((BYTE*)dataBuffer + 20);
+			etherFrameType = (etherFrameType << 8) | (*((BYTE*)dataBuffer + 21));
+			//Now we get the ethtype in little endian (x86-64)
+
+			SOCKADDR_INET destIP;
+			MIB_IPFORWARD_ROW2 forwardInfo;
+			SOCKADDR_INET bestSrcIP;
+			memset(&destIP, 0, sizeof(destIP));
+			destIP.si_family = 2;
+			GetBestRoute2(NULL, *(ULONG*)dataBuffer, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);
 
 
 			if (!success) {
@@ -77,11 +96,15 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 			//Ring buffer block structure:
 			//ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
-			WriteBlockToRingBufferR3(&user2kernelRingBuffer_INBOUND,dataBuffer);
+			WriteBlockToRingBufferR3(&user2kernelRingBuffer_INBOUND, dataBuffer);
+
 
 		} while (FALSE);
 
+
 	}
+
+
 
 
 	if (dataBuffer != NULL) {
@@ -94,6 +117,8 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 VOID TestingRoutine2(VOID* must_null_ptr) {
 	VOID* dataBuffer = malloc(RING_BUFFER_BLOCK_SIZE);
 
+
+
 	while (1) {
 
 		if (dataBuffer == NULL) {
@@ -101,7 +126,10 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 		}
 		do {
 
-			BOOLEAN success = ReadBlockFromRingBufferR3(&kernel2userRingBuffer_OUTBOUND,dataBuffer);
+			//QueueUserWorkItem((LPTHREAD_START_ROUTINE)TestingRoutine2, NULL, WT_EXECUTEDEFAULT);
+
+			BOOLEAN success = ReadBlockFromRingBufferR3(&kernel2userRingBuffer_OUTBOUND, dataBuffer);
+
 
 
 			//EthTypeCode is in big endian,convert to little endian!!!
@@ -125,11 +153,13 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 			//Ring buffer block structure:
 			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
-			WriteBlockToRingBufferR3(&user2kernelRingBuffer_OUTBOUND,dataBuffer);
+			WriteBlockToRingBufferR3(&user2kernelRingBuffer_OUTBOUND, dataBuffer);
+
+
 
 		} while (FALSE);
-
 	}
+
 
 	if (dataBuffer != NULL) {
 		free(dataBuffer);
@@ -140,12 +170,12 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 
 
 int main() {
-	NotifyRouteChange2(AF_UNSPEC, (PIPFORWARD_CHANGE_CALLBACK)RefreshRouteTable, NULL, TRUE, &refreshRouteTableHandle);
+	
 
 	do {
 		commDevice = CreateFile(WINPTABLES_DEVICE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
-		if (commDevice == INVALID_HANDLE_VALUE || commDevice== NULL) {
+		if (commDevice == INVALID_HANDLE_VALUE || commDevice == NULL) {
 			printf("[ERROR] winptables communicate device open failed. HANDLE_VALUE: 0x%p\n", commDevice);
 			break;
 		}
@@ -163,32 +193,42 @@ int main() {
 		DWORD outLeng = 0;
 
 		BOOL getMDLOk = DeviceIoControl(commDevice,
-											CTL_CODE(FILE_DEVICE_UNKNOWN,
-												0x801, METHOD_BUFFERED, 
-												FILE_GENERIC_WRITE
-											),
-											NULL,
-											0,
-											outBuffer,
-											8 * sizeof(VOID*),
-											&outLeng,
-											NULL
-										);
+			CTL_CODE(FILE_DEVICE_UNKNOWN,
+				0x801, METHOD_BUFFERED,
+				FILE_GENERIC_WRITE
+			),
+			NULL,
+			0,
+			outBuffer,
+			8 * sizeof(VOID*),
+			&outLeng,
+			NULL
+		);
 
 		if (!getMDLOk) {
 			printf("[ERROR] Get kernel mapped address failed.");
 			break;
 		}
 
-		 kernel2userRingBuffer_INBOUND.bufferAddress = *outBuffer;
-		 kernel2userRingBuffer_OUTBOUND.bufferAddress = *(outBuffer + 1);
-		 user2kernelRingBuffer_INBOUND.bufferAddress = *(outBuffer + 2);
-		 user2kernelRingBuffer_OUTBOUND.bufferAddress = *(outBuffer + 3);
+		InitializeCriticalSection(&kernel2userRingBuffer_INBOUND.readLock);
+		InitializeCriticalSection(&kernel2userRingBuffer_INBOUND.writeLock);
+		InitializeCriticalSection(&kernel2userRingBuffer_OUTBOUND.readLock);
+		InitializeCriticalSection(&kernel2userRingBuffer_OUTBOUND.writeLock);
+		InitializeCriticalSection(&user2kernelRingBuffer_INBOUND.readLock);
+		InitializeCriticalSection(&user2kernelRingBuffer_INBOUND.writeLock);
+		InitializeCriticalSection(&user2kernelRingBuffer_OUTBOUND.readLock);
+		InitializeCriticalSection(&user2kernelRingBuffer_OUTBOUND.writeLock);
 
-		 kernel2userRingBuffer_INBOUND.sharedStructure = *(outBuffer + 4);
-		 kernel2userRingBuffer_OUTBOUND.sharedStructure = *(outBuffer + 5);
-		 user2kernelRingBuffer_INBOUND.sharedStructure = *(outBuffer + 6);
-		 user2kernelRingBuffer_OUTBOUND.sharedStructure = *(outBuffer + 7);
+
+		kernel2userRingBuffer_INBOUND.bufferAddress = *outBuffer;
+		kernel2userRingBuffer_OUTBOUND.bufferAddress = *(outBuffer + 1);
+		user2kernelRingBuffer_INBOUND.bufferAddress = *(outBuffer + 2);
+		user2kernelRingBuffer_OUTBOUND.bufferAddress = *(outBuffer + 3);
+
+		kernel2userRingBuffer_INBOUND.sharedStructure = *(outBuffer + 4);
+		kernel2userRingBuffer_OUTBOUND.sharedStructure = *(outBuffer + 5);
+		user2kernelRingBuffer_INBOUND.sharedStructure = *(outBuffer + 6);
+		user2kernelRingBuffer_OUTBOUND.sharedStructure = *(outBuffer + 7);
 
 
 		printf("[OK] Get kernel mapped address success. \n	\
@@ -204,9 +244,9 @@ int main() {
 				Info: Head:%d Tail:%d Size:%d ModFactor:%d\n	\
 			user2kernelRingBuffer_OUTBOUND.sharedStructure:0x%p\n	\
 				Info: Head:%d Tail:%d Size:%d ModFactor:%d\n",
-			kernel2userRingBuffer_INBOUND.bufferAddress, 
-			kernel2userRingBuffer_OUTBOUND.bufferAddress, 
-			user2kernelRingBuffer_INBOUND.bufferAddress, 
+			kernel2userRingBuffer_INBOUND.bufferAddress,
+			kernel2userRingBuffer_OUTBOUND.bufferAddress,
+			user2kernelRingBuffer_INBOUND.bufferAddress,
 			user2kernelRingBuffer_OUTBOUND.bufferAddress,
 			kernel2userRingBuffer_INBOUND.sharedStructure,
 			kernel2userRingBuffer_INBOUND.sharedStructure->head, kernel2userRingBuffer_INBOUND.sharedStructure->tail, kernel2userRingBuffer_INBOUND.sharedStructure->bufferSize, kernel2userRingBuffer_INBOUND.sharedStructure->modFactor,
@@ -240,25 +280,29 @@ int main() {
 		}
 		printf("[OK] winptables kernel-user syncheonize event (u2k_in) open success. HANDLE_VALUE: 0x%p\n", user2kernelRingBuffer_INBOUND.dataBlockWriteEventHandle);
 
-		user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle =  OpenEvent(EVENT_ALL_ACCESS, FALSE, WINPTABLES_KERNEL_EVENT_USER_TO_KERNEL_OUTBOUND);
-		if (user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle == INVALID_HANDLE_VALUE || user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle ==NULL) {
+		user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle = OpenEvent(EVENT_ALL_ACCESS, FALSE, WINPTABLES_KERNEL_EVENT_USER_TO_KERNEL_OUTBOUND);
+		if (user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle == INVALID_HANDLE_VALUE || user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle == NULL) {
 			printf("[ERROR] winptables kernel-user syncheonize event (u2k_out) open failed. HANDLE_VALUE: 0x%p\n", user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle);
 			break;
 		}
 		printf("[OK] winptables kernel-user syncheonize event (u2k_out) open success. HANDLE_VALUE: 0x%p\n", user2kernelRingBuffer_OUTBOUND.dataBlockWriteEventHandle);
 
-		
-		
-		CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestingRoutine1, NULL, 0, NULL);
 
-		CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestingRoutine2, NULL, 0, NULL);
-		
+
+		//CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestingRoutine1, NULL, 0, NULL);
+
+		//CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestingRoutine, NULL, 0, NULL);
+
 		/*memset(kernel2userRingBuffer_INBOUND.sharedStructure.bufferAddress, 0, 32);
 		memset(kernel2userRingBuffer_OUTBOUND.sharedStructure.bufferAddress, 0, 32);
 		memset(kernel2userRingBuffer_INBOUND.bufferAddress, 0, 32);
 		memset(user2kernelRingBuffer_INBOUND.bufferAddress, 0, 32);*/
-		
-		
+
+		NotifyRouteChange2(AF_UNSPEC, (PIPFORWARD_CHANGE_CALLBACK)RefreshRouteTable, NULL, FALSE, &refreshRouteTableHandle);
+
+		QueueUserWorkItem((LPTHREAD_START_ROUTINE)TestingRoutine1, NULL, WT_EXECUTEDEFAULT);
+		QueueUserWorkItem((LPTHREAD_START_ROUTINE)TestingRoutine2, NULL, WT_EXECUTEDEFAULT);
+
 
 	} while (FALSE);
 	int t;

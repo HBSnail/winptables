@@ -24,6 +24,8 @@
 
         HANDLE dataBlockWriteEventHandle;
         BYTE* bufferAddress;
+        CRITICAL_SECTION readLock;
+        CRITICAL_SECTION writeLock;
 
     }RING_BUFFER_R3;
 

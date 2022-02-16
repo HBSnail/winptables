@@ -26,9 +26,9 @@ BOOLEAN WriteRingBufferR3(
 	BOOLEAN success = TRUE;
 
 	//Before write must get the spin lock first. Only one thread can read or write the same ring buffer.
-	//if (!isLocked) {
-	//	NDIS_ACQUIRE_LOCK(&destinationRingBuffer->writeLock, dispatchLevel);
-	//}
+	if (!isLocked) {
+		EnterCriticalSection(&destinationRingBuffer->writeLock);
+	}
 
 	//Check if the ring buffer has space to write
 	if (GetRingBufferR3Available(destinationRingBuffer) + length < destinationRingBuffer->sharedStructure->bufferSize) {
@@ -57,9 +57,9 @@ BOOLEAN WriteRingBufferR3(
 
 
 	//After write release the spin lock. Allow other threads read or write.
-	//if (!isLocked) {
-	//	NDIS_RELEASE_LOCK(&destinationRingBuffer->writeLock, dispatchLevel);
-	//}
+	if (!isLocked) {
+		LeaveCriticalSection(&destinationRingBuffer->writeLock);
+	}
 
 
 	return success;
@@ -75,9 +75,9 @@ BOOLEAN ReadRingBufferR3(
 	BOOLEAN success = TRUE;
 
 	//Before read must get the spin lock first. Only one thread can read or write the same ring buffer.
-	//if (!isLocked) {
-	//	NDIS_ACQUIRE_LOCK(&sourceRingBuffer->readLock, dispatchLevel);
-	//}
+	if (!isLocked) {
+		EnterCriticalSection(&sourceRingBuffer->readLock);
+	}
 
 
 	if (GetRingBufferR3Available(sourceRingBuffer) >= length) {
@@ -105,9 +105,9 @@ BOOLEAN ReadRingBufferR3(
 
 
 	//After read release the spin lock. Allow other threads enter.
-	//if (!isLocked) {
-	//	NDIS_RELEASE_LOCK(&sourceRingBuffer->readLock, dispatchLevel);
-	//}
+	if (!isLocked) {
+		LeaveCriticalSection(&sourceRingBuffer->readLock);
+	}
 
 
 	return success;
