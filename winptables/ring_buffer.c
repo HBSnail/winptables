@@ -8,12 +8,28 @@
 #include "global.h"
 #include "ring_buffer.h"
 
+ /*++
 
+  Routine Description:
+
+	Get available data length in byte of a ring buffer
+
+  Arguments:
+
+	 RING_BUFFER* ringBuffer - the pointer of a ring buffer structure
+
+  Return Value:
+
+	  ULONG indecate the length in byte
+
+  --*/
 ULONG GetRingBufferAvailable(RING_BUFFER* ringBuffer) {
 	return ((ringBuffer->RING_BUFFER_SHARED_VARIABLES.head) >= (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail)) ?
 		((ringBuffer->RING_BUFFER_SHARED_VARIABLES.head) - (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail)) :
 		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize - (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail) + (ringBuffer->RING_BUFFER_SHARED_VARIABLES.head);
 }
+
+
  /*++
 
  Routine Description:

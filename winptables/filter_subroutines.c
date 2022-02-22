@@ -2,7 +2,7 @@
 /*
 * File Name:		filter_subroutines.c
 * Description:		The subroutines for handling NDIS filter
-* Date:			2022.1.14
+* Date:				2022.1.14
 * Author:			HBSnail
 */
 
@@ -55,10 +55,10 @@ NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, MDL* dat
 
 VOID WPTFreeNBL(NET_BUFFER_LIST* NetBufferLists) {
 
-	NET_BUFFER_LIST* pNetBufList = NetBufferLists;
-	NET_BUFFER* currentBuffer;
-	MDL* pMDL;
-	VOID* npBuffer;
+	//NET_BUFFER_LIST* pNetBufList = NetBufferLists;
+	//NET_BUFFER* currentBuffer;
+	//MDL* pMDL;
+	//VOID* npBuffer;
 
 	//currentBuffer = NET_BUFFER_LIST_FIRST_NB(pNetBufList);
 	//while (currentBuffer != NULL)
@@ -72,7 +72,7 @@ VOID WPTFreeNBL(NET_BUFFER_LIST* NetBufferLists) {
 	//	currentBuffer = NET_BUFFER_NEXT_NB(currentBuffer);
 	//}
 
-	NdisFreeNetBufferList(pNetBufList);
+	NdisFreeNetBufferList(NetBufferLists);
 
 }
 

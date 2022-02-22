@@ -144,7 +144,6 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 				break;
 			}
 
-
 			//Ring buffer block structure:
 			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
