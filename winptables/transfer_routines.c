@@ -17,11 +17,13 @@ extern RING_BUFFER user2kernelRingBuffer_OUTBOUND;
 
 
 extern LOOKASIDE_LIST_EX ringBufferBlockPoolList;
+extern NDIS_HANDLE filterDriverHandle;
 
 BOOLEAN threadFLAG;
 
 VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
+	BYTE* dataBuffer = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
+	MDL* dataMDL = NdisAllocateMdl(filterDriverHandle, dataBuffer, RING_BUFFER_BLOCK_SIZE);
 
 	while (threadFLAG) {
 
@@ -40,15 +42,16 @@ VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
 			//Ring buffer block structure:
 			//ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
-			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 0);
-			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 4);
+			ULONG interfaceIndex = *(ULONG*)(dataBuffer+ 0);
+			ULONG ethLength = *(ULONG*)(dataBuffer + 4);
 
 			FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
 			if (fContext == NULL) {
 				break;
 			}
 
-			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 8, FilterToUpper, NO_FLAG);
+			NdisMoveMemory(dataBuffer, dataBuffer + 8, ethLength);
+			TransmitEthPacket(fContext, ethLength, dataMDL, FilterToUpper, NO_FLAG);
 
 		} while (FALSE);
 
@@ -57,6 +60,9 @@ VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
 
 	if (dataBuffer != NULL) {
 		ExFreeToLookasideListEx(&ringBufferBlockPoolList, dataBuffer);
+	}
+	if (dataMDL != NULL) {
+		NdisFreeMdl(dataMDL);
 	}
 
 
@@ -67,8 +73,8 @@ VOID TransmitRoutine_INBOUND(VOID* must_null_ptr) {
 }
 
 VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
-	VOID* dataBuffer = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
-
+	BYTE* dataBuffer = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
+	MDL* dataMDL = NdisAllocateMdl(filterDriverHandle, dataBuffer, RING_BUFFER_BLOCK_SIZE);
 	while (threadFLAG) {
 
 		if (dataBuffer == NULL) {
@@ -86,15 +92,17 @@ VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
 			//Ring buffer block structure:
 			//ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
 
-			ULONG interfaceIndex = *(ULONG*)(((BYTE*)dataBuffer) + 0);
-			ULONG ethLength = *(ULONG*)(((BYTE*)dataBuffer) + 4);
+			ULONG interfaceIndex = *(ULONG*)(dataBuffer + 0);
+			ULONG ethLength = *(ULONG*)(dataBuffer + 4);
 
 			FILTER_CONTEXT* fContext = GetFilterContextByMiniportInterfaceIndex(interfaceIndex);
 			if (fContext == NULL) {
 				break;
 			}
 
-			TransmitEthPacket(fContext, ethLength, ((BYTE*)dataBuffer) + 8, FilterToNIC, NO_FLAG);
+			NdisMoveMemory(dataBuffer, dataBuffer + 8, ethLength);
+
+			TransmitEthPacket(fContext, ethLength, dataMDL, FilterToNIC, NO_FLAG);
 
 		} while (FALSE);
 
@@ -103,6 +111,10 @@ VOID TransmitRoutine_OUTBOUND(VOID* must_null_ptr) {
 
 	if (dataBuffer != NULL) {
 		ExFreeToLookasideListEx(&ringBufferBlockPoolList, dataBuffer);
+	}
+
+	if (dataMDL != NULL) {
+		NdisFreeMdl(dataMDL);
 	}
 
 	DbgPrint("THREAD TERMINATE\n");

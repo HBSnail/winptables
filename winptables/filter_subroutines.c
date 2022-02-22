@@ -25,26 +25,13 @@ RING_BUFFER kernel2userRingBuffer_OUTBOUND;
 
 FILTER_CONTEXT* interfaceCache[65536] = { NULL };
 
-NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, BYTE* ethDataPtr, TRANSFER_DIRECION direction, ULONG flag) {
+NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, MDL* dataMDL, TRANSFER_DIRECION direction, ULONG flag) {
 
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	do {
 
-		
-		VOID* ethMDLSpace = ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
-		if (ethMDLSpace == NULL) {
-			break;
-		}
-		MDL* ethMDL = NdisAllocateMdl(filterContext->filterHandle, ethMDLSpace, RING_BUFFER_BLOCK_SIZE);
-		if (ethMDL == NULL) {
-			ExFreeToLookasideListEx(&ringBufferBlockPoolList, ethMDLSpace);
-			break;
-		}
-		NdisMoveMemory(ethMDLSpace, ethDataPtr, length);
-		NET_BUFFER_LIST* iNBLfromEthpacket = NdisAllocateNetBufferAndNetBufferList(filterContext->sendNetBufferListPool, 0, 0, ethMDL, 0, length);
+		NET_BUFFER_LIST* iNBLfromEthpacket = NdisAllocateNetBufferAndNetBufferList(filterContext->sendNetBufferListPool, 0, 0, dataMDL, 0, length);
 		if (iNBLfromEthpacket == NULL) {
-			ExFreeToLookasideListEx(&ringBufferBlockPoolList, ethMDLSpace);
-			NdisFreeMdl(ethMDL);
 			break;
 		}
 		iNBLfromEthpacket->SourceHandle = filterContext->filterHandle;
@@ -58,8 +45,6 @@ NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, BYTE* et
 			NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, iNBLfromEthpacket, NDIS_DEFAULT_PORT_NUMBER, 1, flag);
 		}
 		else {
-			ExFreeToLookasideListEx(&ringBufferBlockPoolList, ethMDLSpace);
-			NdisFreeMdl(ethMDL);
 			break;
 		}
 
@@ -75,17 +60,17 @@ VOID WPTFreeNBL(NET_BUFFER_LIST* NetBufferLists) {
 	MDL* pMDL;
 	VOID* npBuffer;
 
-	currentBuffer = NET_BUFFER_LIST_FIRST_NB(pNetBufList);
-	while (currentBuffer != NULL)
-	{
-		pMDL = NET_BUFFER_FIRST_MDL(currentBuffer);
-		npBuffer = MmGetSystemAddressForMdlSafe(pMDL, HighPagePriority | MdlMappingNoExecute);
-		if (npBuffer != NULL) {
-			ExFreeToLookasideListEx(&ringBufferBlockPoolList, npBuffer);
-		}
-		NdisFreeMdl(pMDL); //Free MDL
-		currentBuffer = NET_BUFFER_NEXT_NB(currentBuffer);
-	}
+	//currentBuffer = NET_BUFFER_LIST_FIRST_NB(pNetBufList);
+	//while (currentBuffer != NULL)
+	//{
+	//	pMDL = NET_BUFFER_FIRST_MDL(currentBuffer);
+	//	npBuffer = MmGetSystemAddressForMdlSafe(pMDL, HighPagePriority | MdlMappingNoExecute);
+	//	if (npBuffer != NULL) {
+	//		ExFreeToLookasideListEx(&ringBufferBlockPoolList, npBuffer);
+	//	}
+	//	NdisFreeMdl(pMDL); //Free MDL
+	//	currentBuffer = NET_BUFFER_NEXT_NB(currentBuffer);
+	//}
 
 	NdisFreeNetBufferList(pNetBufList);
 
