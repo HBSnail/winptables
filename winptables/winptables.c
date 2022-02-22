@@ -179,10 +179,6 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		}
 
 
-		//Use direct IO instead of buffering IO for high speed
-		//winptablesCommunicationDevice->Flags |= DO_DIRECT_IO;
-
-
 		//Create a symbolic link for the device
 		//RtlInitUnicodeString(&linkName, WINPTABLES_COMMUNICATION_DEVICE_LINK);
 		status = IoCreateSymbolicLink(&(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_LINK), & (UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_NAME));

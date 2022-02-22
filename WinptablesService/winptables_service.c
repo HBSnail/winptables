@@ -85,7 +85,7 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 			SOCKADDR_INET bestSrcIP;
 			memset(&destIP, 0, sizeof(destIP));
 			destIP.si_family = 2;
-			GetBestRoute2(NULL, *(ULONG*)dataBuffer, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);
+			//GetBestRoute2(NULL, *(ULONG*)dataBuffer, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);
 
 
 			if (!success) {
@@ -101,11 +101,7 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 
 		} while (FALSE);
 
-
 	}
-
-
-
 
 	if (dataBuffer != NULL) {
 		free(dataBuffer);
@@ -116,7 +112,6 @@ VOID TestingRoutine1(VOID* must_null_ptr) {
 
 VOID TestingRoutine2(VOID* must_null_ptr) {
 	VOID* dataBuffer = malloc(RING_BUFFER_BLOCK_SIZE);
-
 
 
 	while (1) {
@@ -142,7 +137,7 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 			SOCKADDR_INET bestSrcIP;
 			memset(&destIP, 0, sizeof(destIP));
 			destIP.si_family = 2;
-			GetBestRoute2(NULL, *(ULONG*)dataBuffer, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);
+			//GetBestRoute2(NULL, *(ULONG*)dataBuffer, NULL, &destIP, 0, &forwardInfo, &bestSrcIP);
 
 
 			if (!success) {
@@ -155,11 +150,8 @@ VOID TestingRoutine2(VOID* must_null_ptr) {
 
 			WriteBlockToRingBufferR3(&user2kernelRingBuffer_OUTBOUND, dataBuffer);
 
-
-
 		} while (FALSE);
 	}
-
 
 	if (dataBuffer != NULL) {
 		free(dataBuffer);

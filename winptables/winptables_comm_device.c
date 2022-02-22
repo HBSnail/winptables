@@ -17,9 +17,55 @@ extern RING_BUFFER kernel2userRingBuffer_OUTBOUND;
 extern RING_BUFFER user2kernelRingBuffer_INBOUND;
 extern RING_BUFFER user2kernelRingBuffer_OUTBOUND;
 
+MDL* kernel2userRingBuffer_INBOUND_MDL = NULL;
+MDL* kernel2userRingBuffer_OUTBOUND_MDL = NULL;
+MDL* user2kernelRingBuffer_INBOUND_MDL = NULL;
+MDL* user2kernelRingBuffer_OUTBOUND_MDL = NULL;
+
+MDL* kernel2userRingBuffer_INBOUND_STRUCTURE_MDL = NULL;
+MDL* kernel2userRingBuffer_OUTBOUND_STRUCTURE_MDL = NULL;
+MDL* user2kernelRingBuffer_INBOUND_STRUCTURE_MDL = NULL;
+MDL* user2kernelRingBuffer_OUTBOUND_STRUCTURE_MDL = NULL;
+
+
 
 BOOLEAN ringBufferReadyFlag = FALSE;
 
+VOID FreeAllMDLs() {
+	if (kernel2userRingBuffer_INBOUND_MDL != NULL) {
+		NdisFreeMdl(kernel2userRingBuffer_INBOUND_MDL);
+		kernel2userRingBuffer_INBOUND_MDL = NULL;
+	}
+	if (kernel2userRingBuffer_OUTBOUND_MDL != NULL) {
+		NdisFreeMdl(kernel2userRingBuffer_OUTBOUND_MDL);
+		kernel2userRingBuffer_OUTBOUND_MDL = NULL;
+	}
+	if (user2kernelRingBuffer_INBOUND_MDL != NULL) {
+		NdisFreeMdl(user2kernelRingBuffer_INBOUND_MDL);
+		user2kernelRingBuffer_INBOUND_MDL = NULL;
+	}
+	if (user2kernelRingBuffer_OUTBOUND_MDL != NULL) {
+		NdisFreeMdl(user2kernelRingBuffer_OUTBOUND_MDL);
+		user2kernelRingBuffer_OUTBOUND_MDL = NULL;
+	}
+
+	if (kernel2userRingBuffer_INBOUND_STRUCTURE_MDL != NULL) {
+		NdisFreeMdl(kernel2userRingBuffer_INBOUND_STRUCTURE_MDL);
+		kernel2userRingBuffer_INBOUND_STRUCTURE_MDL = NULL;
+	}
+	if (kernel2userRingBuffer_OUTBOUND_STRUCTURE_MDL != NULL) {
+		NdisFreeMdl(kernel2userRingBuffer_OUTBOUND_STRUCTURE_MDL);
+		kernel2userRingBuffer_OUTBOUND_STRUCTURE_MDL = NULL;
+	}
+	if (user2kernelRingBuffer_INBOUND_STRUCTURE_MDL != NULL) {
+		NdisFreeMdl(user2kernelRingBuffer_INBOUND_STRUCTURE_MDL);
+		user2kernelRingBuffer_INBOUND_STRUCTURE_MDL = NULL;
+	}
+	if (user2kernelRingBuffer_OUTBOUND_STRUCTURE_MDL != NULL) {
+		NdisFreeMdl(user2kernelRingBuffer_OUTBOUND_STRUCTURE_MDL);
+		user2kernelRingBuffer_OUTBOUND_STRUCTURE_MDL = NULL;
+	}
+}
 NTSTATUS WPTCommDeviceCreate(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -64,24 +110,24 @@ NTSTATUS WPTCommDeviceIOCtl(DEVICE_OBJECT* deviceObject, IRP* irp) {
 			ringBufferReadyFlag = TRUE;
 		}
 
-		//TODO: this may casue memory leak --->
+		FreeAllMDLs();
 
-		MDL* kernel2userRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_INBOUND.bufferAddress, kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
-		MDL* kernel2userRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_OUTBOUND.bufferAddress, kernel2userRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
-		MDL* user2kernelRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_INBOUND.bufferAddress, user2kernelRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
-		MDL* user2kernelRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_OUTBOUND.bufferAddress, user2kernelRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
-		
-		MDL* kernel2userRingBuffer_INBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
-		MDL* kernel2userRingBuffer_OUTBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &kernel2userRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
-		MDL* user2kernelRingBuffer_INBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &user2kernelRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
-		MDL* user2kernelRingBuffer_OUTBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &user2kernelRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
+		kernel2userRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_INBOUND.bufferAddress, kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+		kernel2userRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, kernel2userRingBuffer_OUTBOUND.bufferAddress, kernel2userRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+		user2kernelRingBuffer_INBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_INBOUND.bufferAddress, user2kernelRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+		user2kernelRingBuffer_OUTBOUND_MDL = NdisAllocateMdl(filterDriverHandle, user2kernelRingBuffer_OUTBOUND.bufferAddress, user2kernelRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES.bufferSize);
+
+		kernel2userRingBuffer_INBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &kernel2userRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
+		kernel2userRingBuffer_OUTBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &kernel2userRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
+		user2kernelRingBuffer_INBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &user2kernelRingBuffer_INBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
+		user2kernelRingBuffer_OUTBOUND_STRUCTURE_MDL = NdisAllocateMdl(filterDriverHandle, &user2kernelRingBuffer_OUTBOUND.RING_BUFFER_SHARED_VARIABLES, sizeof(VOID*));
 
 
 		VOID* kernel2userRingBuffer_INBOUND_UserAddr = MmMapLockedPagesSpecifyCache(kernel2userRingBuffer_INBOUND_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
 		VOID* kernel2userRingBuffer_OUTBOUND_UserAddr = MmMapLockedPagesSpecifyCache(kernel2userRingBuffer_OUTBOUND_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
 		VOID* user2kernelRingBuffer_INBOUND_UserAddr = MmMapLockedPagesSpecifyCache(user2kernelRingBuffer_INBOUND_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
 		VOID* user2kernelRingBuffer_OUTBOUND_UserAddr = MmMapLockedPagesSpecifyCache(user2kernelRingBuffer_OUTBOUND_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
-		
+
 		VOID* kernel2userRingBuffer_INBOUND_STRUCTURE_UserAddr = MmMapLockedPagesSpecifyCache(kernel2userRingBuffer_INBOUND_STRUCTURE_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
 		VOID* kernel2userRingBuffer_OUTBOUND_STRUCTURE_UserAddr = MmMapLockedPagesSpecifyCache(kernel2userRingBuffer_OUTBOUND_STRUCTURE_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
 		VOID* user2kernelRingBuffer_INBOUND_STRUCTURE_UserAddr = MmMapLockedPagesSpecifyCache(user2kernelRingBuffer_INBOUND_STRUCTURE_MDL, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
@@ -103,7 +149,7 @@ NTSTATUS WPTCommDeviceIOCtl(DEVICE_OBJECT* deviceObject, IRP* irp) {
 
 	irp->IoStatus.Status = STATUS_SUCCESS;
 
-	
+
 	IoCompleteRequest(irp, IO_NO_INCREMENT);
 	return status;
 }
@@ -124,7 +170,7 @@ NTSTATUS WPTCommDeviceWrite(DEVICE_OBJECT* deviceObject, IRP* irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	IO_STACK_LOCATION* stack = IoGetCurrentIrpStackLocation(irp);
-	
+
 
 	irp->IoStatus.Status = status;
 
