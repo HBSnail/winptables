@@ -10,7 +10,7 @@
 
     #define _RING_BUFFER_H_
 
-    #define RING_BUFFER_BLOCK_SIZE 2048
+    #define RING_BUFFER_BLOCK_SIZE 1660
     #include "global.h"
 
     typedef struct _RING_BUFFER

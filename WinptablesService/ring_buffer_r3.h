@@ -9,7 +9,7 @@
 
     #include "global.h"
 
-    #define RING_BUFFER_BLOCK_SIZE 2048
+    #define RING_BUFFER_BLOCK_SIZE 1660
     typedef struct _RING_BUFFER_SHARED_STRUCTURE
     {
         ULONG head;
