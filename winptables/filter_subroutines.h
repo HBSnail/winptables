@@ -11,7 +11,7 @@
 
 	#include "ring_buffer.h"
 
-	NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, UINT length, BYTE* ethDataPtr, TRANSFER_DIRECION direction, ULONG flag);
+	NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, MDL* dataMDL, TRANSFER_DIRECION direction, ULONG flag);
 
 	VOID WPTFreeNBL(NET_BUFFER_LIST* NetBufferLists);
 

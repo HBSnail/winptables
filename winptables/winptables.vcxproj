@@ -140,9 +140,14 @@
       <PreprocessorDefinitions>NDIS_SUPPORT_NDIS61;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>false</TreatWarningAsError>
       <WarningLevel>Level4</WarningLevel>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ndis.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ndis.lib;netio.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -160,6 +165,7 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="transfer_routines.c" />
     <ClCompile Include="winptables_comm_device.c" />
     <ClCompile Include="filter_subroutines.c" />
     <ClCompile Include="ring_buffer.c" />
@@ -169,6 +175,7 @@
     <ClInclude Include="filter_subroutines.h" />
     <ClInclude Include="global.h" />
     <ClInclude Include="ring_buffer.h" />
+    <ClInclude Include="transfer_routines.h" />
     <ClInclude Include="winptables_comm_device.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

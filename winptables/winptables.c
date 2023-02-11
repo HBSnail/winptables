@@ -10,20 +10,25 @@
 #include "ring_buffer.h"
 #include "winptables_comm_device.h"
 
+extern BOOLEAN threadFLAG;
 
-UINT ndisVersion;
+
 NDIS_HANDLE filterDriverHandle = NULL;
 NDIS_HANDLE filterDriverObject = NULL;
 NDIS_SPIN_LOCK filterListLock;
 LIST_ENTRY filterModuleList;
 
 
-RING_BUFFER commRingBuffer;
+RING_BUFFER kernel2userRingBuffer_INBOUND;
+RING_BUFFER kernel2userRingBuffer_OUTBOUND;
+RING_BUFFER user2kernelRingBuffer_INBOUND;
+RING_BUFFER user2kernelRingBuffer_OUTBOUND;
 
-
-UNICODE_STRING deviceName;
-UNICODE_STRING linkName;
 DEVICE_OBJECT* winptablesCommunicationDevice;
+
+LOOKASIDE_LIST_EX ringBufferBlockPoolList;
+
+
 
 /*++
 
@@ -45,11 +50,25 @@ VOID DriverUnload(DRIVER_OBJECT* driverObject) {
 
 	DbgPrint("DriverUnload\n");
 
+	threadFLAG = FALSE;
+
+	ExDeleteLookasideListEx(&ringBufferBlockPoolList);
+
+	NdisFreeSpinLock(&filterListLock);
+
 	NdisFDeregisterFilterDriver(filterDriverHandle);
 
-	IoDeleteSymbolicLink(&linkName);
+	IoDeleteSymbolicLink(&(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_LINK));
 
 	IoDeleteDevice(winptablesCommunicationDevice);
+
+	FreeRingBuffer(&kernel2userRingBuffer_INBOUND);
+
+	FreeRingBuffer(&kernel2userRingBuffer_OUTBOUND);
+
+	FreeRingBuffer(&user2kernelRingBuffer_INBOUND);
+
+	FreeRingBuffer(&user2kernelRingBuffer_OUTBOUND);
 
 	return;
 }
@@ -81,14 +100,11 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 
 		//Check the NDIS version
 		//winptables only support NDIS_VERSION >= 6.20(win7&server2008)
-		ndisVersion = NdisGetVersion();
+		ULONG ndisVersion = NdisGetVersion();
 		if (ndisVersion < NDIS_RUNTIME_VERSION_620)
 		{
 			status = NDIS_STATUS_UNSUPPORTED_REVISION;
 			break;
-		}
-		else {
-			ndisVersion = NDIS_RUNTIME_VERSION_620;
 		}
 
 		//Prepare the variables used in NDIS filter driver registration
@@ -152,8 +168,9 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		driverObject->DriverUnload = DriverUnload;
 
 		//Create the device to communicate with Ring3 
-		RtlInitUnicodeString(&deviceName, WINPTABLES_COMMUNICATION_DEVICE_NAME);
-		status = IoCreateDevice(driverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &winptablesCommunicationDevice);
+		//RtlInitUnicodeString(&deviceName, WINPTABLES_COMMUNICATION_DEVICE_NAME);
+		status = IoCreateDevice(driverObject, 0, &(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_NAME), FILE_DEVICE_UNKNOWN, 0, TRUE, &winptablesCommunicationDevice);
+
 
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
@@ -161,12 +178,10 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 			break;
 		}
 
-		//Use direct IO instead of buffering IO for high speed
-		winptablesCommunicationDevice->Flags |= DO_DIRECT_IO;
 
 		//Create a symbolic link for the device
-		RtlInitUnicodeString(&linkName, WINPTABLES_COMMUNICATION_DEVICE_LINK);
-		status = IoCreateSymbolicLink(&linkName, &deviceName);
+		//RtlInitUnicodeString(&linkName, WINPTABLES_COMMUNICATION_DEVICE_LINK);
+		status = IoCreateSymbolicLink(&(UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_LINK), & (UNICODE_STRING)RTL_CONSTANT_STRING(WINPTABLES_COMMUNICATION_DEVICE_NAME));
 		if (!NT_SUCCESS(status)) {
 			NdisFreeSpinLock(&filterListLock);
 			NdisFDeregisterFilterDriver(filterDriverHandle);
@@ -182,18 +197,8 @@ NTSTATUS DriverEntry(DRIVER_OBJECT* driverObject, UNICODE_STRING* registryPath) 
 		driverObject->MajorFunction[IRP_MJ_READ] = WPTCommDeviceRead;
 		driverObject->MajorFunction[IRP_MJ_WRITE] = WPTCommDeviceWrite;
 
-		//Init the ring buffer which can share data with Ring3
-		//20 means 1<<20 Bytes = 1MB
-		//Init ring buffer with size of 1MB
-		status = InitRingBuffer(&commRingBuffer, 20);
+		ExInitializeLookasideListEx(&ringBufferBlockPoolList, NULL, NULL, NonPagedPoolNx, 0, RING_BUFFER_BLOCK_SIZE, ETH_FRAME_POOL_ALLOC_TAG, 0);
 
-		if (!NT_SUCCESS(status)) {
-			NdisFreeSpinLock(&filterListLock);
-			NdisFDeregisterFilterDriver(filterDriverHandle);
-			IoDeleteDevice(winptablesCommunicationDevice);
-			FreeRingBuffer(&commRingBuffer);
-			break;
-		}
 
 	} while (FALSE);
 

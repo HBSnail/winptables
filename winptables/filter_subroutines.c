@@ -1,56 +1,50 @@
+
 /*
- * File Name:		filter_subroutines.c
- * Description:		The subroutines for handling NDIS filter
- * Date:			2022.1.14
- * Author:			HBSnail
- */
+* File Name:		filter_subroutines.c
+* Description:		The subroutines for handling NDIS filter
+* Date:				2022.1.14
+* Author:			HBSnail
+*/
 
 
 #include "global.h"
 #include "filter_subroutines.h"
 #include "ring_buffer.h"
 
-extern UINT ndisVersion;
 extern NDIS_HANDLE filterDriverHandle;
 extern NDIS_HANDLE filterDriverObject;
 extern NDIS_SPIN_LOCK filterListLock;
 extern LIST_ENTRY filterModuleList;
-extern RING_BUFFER commRingBuffer;
+extern LOOKASIDE_LIST_EX ringBufferBlockPoolList;
+extern BOOLEAN ringBufferReadyFlag;
 
-NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, UINT length, BYTE* ethDataPtr, TRANSFER_DIRECION direction, ULONG flag) {
+RING_BUFFER kernel2userRingBuffer_INBOUND;
+RING_BUFFER kernel2userRingBuffer_OUTBOUND;
+
+
+
+FILTER_CONTEXT* interfaceCache[65536] = { NULL };
+
+NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, ULONG length, MDL* dataMDL, TRANSFER_DIRECION direction, ULONG flag) {
 
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	do {
 
-		VOID* ethMDLSpace = ExAllocatePoolWithTag(NonPagedPool, length, ETH_FRAME_POOL_ALLOC_TAG);
-		if (ethMDLSpace == NULL) {
-			break;
-		}
-		MDL* ethMDL = NdisAllocateMdl(filterContext->filterHandle, ethMDLSpace, length);
-		if (ethMDL == NULL) {
-			ExFreePoolWithTag(ethMDLSpace, ETH_FRAME_POOL_ALLOC_TAG);
-			break;
-		}
-		NdisMoveMemory(ethMDLSpace, ethDataPtr, length);
-		NET_BUFFER_LIST* iNBLfromEthpacket = NdisAllocateNetBufferAndNetBufferList(filterContext->sendNetBufferListPool, 0, 0, ethMDL, 0, length);
+		NET_BUFFER_LIST* iNBLfromEthpacket = NdisAllocateNetBufferAndNetBufferList(filterContext->sendNetBufferListPool, 0, 0, dataMDL, 0, length);
 		if (iNBLfromEthpacket == NULL) {
-			ExFreePoolWithTag(ethMDLSpace, ETH_FRAME_POOL_ALLOC_TAG);
-			NdisFreeMdl(ethMDL);
 			break;
 		}
 		iNBLfromEthpacket->SourceHandle = filterContext->filterHandle;
 
-		if ((BYTE)direction == (BYTE)FilterToNIC) {
+		if ((ULONG)direction == (ULONG)FilterToNIC) {
 			status = STATUS_SUCCESS;
 			NdisFSendNetBufferLists(filterContext->filterHandle, iNBLfromEthpacket, NDIS_DEFAULT_PORT_NUMBER, flag);
 		}
-		else if ((BYTE)direction == (BYTE)FilterToUpper) {
+		else if ((ULONG)direction == (ULONG)FilterToUpper) {
 			status = STATUS_SUCCESS;
 			NdisFIndicateReceiveNetBufferLists(filterContext->filterHandle, iNBLfromEthpacket, NDIS_DEFAULT_PORT_NUMBER, 1, flag);
 		}
 		else {
-			ExFreePoolWithTag(ethMDLSpace, ETH_FRAME_POOL_ALLOC_TAG);
-			NdisFreeMdl(ethMDL);
 			break;
 		}
 
@@ -61,32 +55,86 @@ NTSTATUS TransmitEthPacket(FILTER_CONTEXT* filterContext, UINT length, BYTE* eth
 
 VOID WPTFreeNBL(NET_BUFFER_LIST* NetBufferLists) {
 
-	NET_BUFFER_LIST* pNetBufList = NetBufferLists;
-	NET_BUFFER* currentBuffer;
-	MDL* pMDL;
-	VOID* npBuffer;
+	//NET_BUFFER_LIST* pNetBufList = NetBufferLists;
+	//NET_BUFFER* currentBuffer;
+	//MDL* pMDL;
+	//VOID* npBuffer;
 
-	currentBuffer = NET_BUFFER_LIST_FIRST_NB(pNetBufList);
-	while (currentBuffer != NULL)
-	{
-		pMDL = NET_BUFFER_FIRST_MDL(currentBuffer);
-		npBuffer = MmGetSystemAddressForMdlSafe(pMDL, HighPagePriority | MdlMappingNoExecute);
-		if (npBuffer != NULL) {
-			ExFreePoolWithTag(npBuffer, ETH_FRAME_POOL_ALLOC_TAG);
+	//currentBuffer = NET_BUFFER_LIST_FIRST_NB(pNetBufList);
+	//while (currentBuffer != NULL)
+	//{
+	//	pMDL = NET_BUFFER_FIRST_MDL(currentBuffer);
+	//	npBuffer = MmGetSystemAddressForMdlSafe(pMDL, HighPagePriority | MdlMappingNoExecute);
+	//	if (npBuffer != NULL) {
+	//		ExFreeToLookasideListEx(&ringBufferBlockPoolList, npBuffer);
+	//	}
+	//	NdisFreeMdl(pMDL); //Free MDL
+	//	currentBuffer = NET_BUFFER_NEXT_NB(currentBuffer);
+	//}
+
+	NdisFreeNetBufferList(NetBufferLists);
+
+}
+
+VOID WriteNBLIntoRingBuffer(RING_BUFFER* ringBuffer, NET_BUFFER_LIST* netBufferLists, TRANSFER_DIRECION direction, ULONG ifIndex) {
+
+	NET_BUFFER_LIST* currentNBL = netBufferLists;
+
+	//Get all netbuffer structure in NBLs
+	while (currentNBL != NULL) {
+
+		for (NET_BUFFER* netbuffer = NET_BUFFER_LIST_FIRST_NB(currentNBL); netbuffer != NULL; netbuffer = NET_BUFFER_NEXT_NB(netbuffer)) {
+
+			if (netbuffer->DataLength >= (RING_BUFFER_BLOCK_SIZE - 8)) {
+				//The frame is TOO LARGE
+				continue;
+			}
+			VOID* freeRingBufferBlock =ExAllocateFromLookasideListEx(&ringBufferBlockPoolList);
+
+			if (freeRingBufferBlock == NULL) {
+				//Memory ALLOC FAILED
+				continue;
+			}
+
+
+			VOID* ethDataPtr = NdisGetDataBuffer(netbuffer, netbuffer->DataLength, (BYTE*)freeRingBufferBlock + 8, 1, 0);
+			//The data in NBL is contiguous system will not auto copy the data, we shouled copy manually
+			if (ethDataPtr != ((BYTE*)freeRingBufferBlock + 8)) {
+				NdisMoveMemory((BYTE*)freeRingBufferBlock + 8, ethDataPtr, netbuffer->DataLength);
+			}
+
+
+			//Ring buffer block structure:
+			//direction 4 byte; ifIndex 4 byte;  ethLeng 4Byte; ethdata... ;pending 0000....
+
+			*((ULONG*)((BYTE*)freeRingBufferBlock + 0)) = (ULONG)ifIndex;
+			*((ULONG*)((BYTE*)freeRingBufferBlock + 4)) = (ULONG)netbuffer->DataLength;
+
+
+			WriteBlockToRingBuffer(ringBuffer, freeRingBufferBlock);
+
+			ExFreeToLookasideListEx(&ringBufferBlockPoolList, freeRingBufferBlock);
+			freeRingBufferBlock = NULL;
+			ethDataPtr = NULL;
+
+
 		}
-		NdisFreeMdl(pMDL); //Free MDL
-		currentBuffer = NET_BUFFER_NEXT_NB(currentBuffer);
+		currentNBL = NET_BUFFER_LIST_NEXT_NBL(currentNBL);
 	}
-
-	NdisFreeNetBufferList(pNetBufList);
 
 }
 
 FILTER_CONTEXT* GetFilterContextByMiniportInterfaceIndex(ULONG index) {
 
+	if (interfaceCache[index] != NULL) {
+		return interfaceCache[index];
+	}
+
 	for (LIST_ENTRY* p = filterModuleList.Flink; p != &filterModuleList; p = p->Flink) {
 
 		FILTER_CONTEXT* context = CONTAINING_RECORD(p, FILTER_CONTEXT, filterModuleLink);
+
+		interfaceCache[context->miniportIfIndex] = context;
 
 		if (context->miniportIfIndex == index) {
 
@@ -97,7 +145,6 @@ FILTER_CONTEXT* GetFilterContextByMiniportInterfaceIndex(ULONG index) {
 
 	return NULL;
 }
-
 
 NDIS_STATUS WPTFilterSetOptions(NDIS_HANDLE  ndisFilterDriverHandle, NDIS_HANDLE  filterDriverContext) {
 
@@ -185,7 +232,7 @@ NDIS_STATUS WPTFilterAttach(NDIS_HANDLE ndisfilterHandle, NDIS_HANDLE filterDriv
 
 		filterContext->miniportName.Length = filterContext->miniportName.MaximumLength = attachParameters->BaseMiniportName->Length;
 		filterContext->miniportName.Buffer = (PWSTR)((PUCHAR)filterContext->miniportFriendlyName.Buffer + filterContext->miniportFriendlyName.Length);
-		NdisMoveMemory(filterContext->miniportName.Buffer,attachParameters->BaseMiniportName->Buffer,filterContext->miniportName.Length);
+		NdisMoveMemory(filterContext->miniportName.Buffer, attachParameters->BaseMiniportName->Buffer, filterContext->miniportName.Length);
 
 		filterContext->miniportIfIndex = attachParameters->BaseMiniportIfIndex;
 
@@ -208,7 +255,7 @@ NDIS_STATUS WPTFilterAttach(NDIS_HANDLE ndisfilterHandle, NDIS_HANDLE filterDriv
 		filterContext->sendNetBufferListPool = NdisAllocateNetBufferListPool(filterContext->filterHandle, &PoolParameters);
 
 		//TODO: disable the offloads converient for future process
-		
+
 		/*
 		NDIS_OFFLOAD_PARAMETERS disableAllOffload;
 		NdisZeroMemory(&disableAllOffload, sizeof(NDIS_OFFLOAD_PARAMETERS));
@@ -251,6 +298,7 @@ NDIS_STATUS WPTFilterAttach(NDIS_HANDLE ndisfilterHandle, NDIS_HANDLE filterDriv
 		InsertHeadList(&filterModuleList, &filterContext->filterModuleLink);
 		NDIS_RELEASE_LOCK(&filterListLock, FALSE);
 
+		interfaceCache[filterContext->miniportIfIndex] = filterContext;
 
 	} while (FALSE);
 
@@ -298,7 +346,7 @@ NDIS_STATUS WPTFilterRestart(NDIS_HANDLE filterModuleContext, NDIS_FILTER_RESTAR
 
 	ndisRestartAttributes = RestartParameters->RestartAttributes;
 
-	
+
 	// If NdisRestartAttributes is not NULL, then the filter can modify generic
 	// attributes and add new media specific info attributes at the end.
 	// Otherwise, if NdisRestartAttributes is NULL, the filter should not try to
@@ -309,13 +357,13 @@ NDIS_STATUS WPTFilterRestart(NDIS_HANDLE filterModuleContext, NDIS_FILTER_RESTAR
 
 		ndisGeneralAttributes = (PNDIS_RESTART_GENERAL_ATTRIBUTES)ndisRestartAttributes->Data;
 
-		
+
 		// Check to see if we need to change any attributes. For example, the
 		// driver can change the current MAC address here. Or the driver can add
 		// media specific info attributes.
 		ndisGeneralAttributes->LookaheadSize = 128;
 
-		
+
 		// Check each attribute to see whether the filter needs to modify it.
 		NextAttributes = ndisRestartAttributes->Next;
 
@@ -367,6 +415,7 @@ VOID WPTFilterDetach(NDIS_HANDLE filterModuleContext) {
 		filterContext->sendNetBufferListPool = NULL;
 	}
 
+	interfaceCache[filterContext->miniportIfIndex] = NULL;
 
 	NDIS_ACQUIRE_LOCK(&filterListLock, FALSE);
 	RemoveEntryList(&filterContext->filterModuleLink);
@@ -417,27 +466,9 @@ VOID WPTReceivedFromNIC(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netBuf
 			break;
 		}
 
-		NET_BUFFER_LIST* currentNBL = netBufferLists;
 
-		//Get all netbuffer structure in NBLs
-		while (currentNBL != NULL) {
-
-			for (NET_BUFFER* netbuffer = NET_BUFFER_LIST_FIRST_NB(currentNBL); netbuffer != NULL; netbuffer = NET_BUFFER_NEXT_NB(netbuffer)) {
-
-				VOID* freeSpace = ExAllocatePoolWithTag(NonPagedPool, netbuffer->DataLength, TEMP_POOL_ALLOC_TAG);
-				if (freeSpace != NULL) {
-					VOID* ethDataPtr = NdisGetDataBuffer(netbuffer, netbuffer->DataLength, freeSpace, 1, 0);
-
-
-					WriteEthFrameToRingBuffer(&commRingBuffer, ethDataPtr, netbuffer->DataLength, filterContext, NICToFilter);
-
-					ExFreePoolWithTag(freeSpace, TEMP_POOL_ALLOC_TAG);
-					freeSpace = NULL;
-					ethDataPtr = NULL;
-
-				}
-			}
-			currentNBL = NET_BUFFER_LIST_NEXT_NBL(currentNBL);
+		if (ringBufferReadyFlag) {
+			WriteNBLIntoRingBuffer(&kernel2userRingBuffer_INBOUND, netBufferLists, NICToFilter, filterContext->miniportIfIndex);
 		}
 
 		NdisFReturnNetBufferLists(filterContext->filterHandle, netBufferLists, receiveFlags);
@@ -465,7 +496,7 @@ VOID WPTSendToUpperFinished(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* ne
 		pNextNetBufList = NET_BUFFER_LIST_NEXT_NBL(pNetBufList);
 		NET_BUFFER_LIST_NEXT_NBL(pNetBufList) = NULL;
 
-		if (pNetBufList->SourceHandle == filterContext->filterHandle) 
+		if (pNetBufList->SourceHandle == filterContext->filterHandle)
 		{
 			//If the NBL has our tag, FREE it.
 			WPTFreeNBL(pNetBufList);
@@ -488,7 +519,7 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 
 	FILTER_CONTEXT* filterContext = (FILTER_CONTEXT*)filterModuleContext;
 
-	NET_BUFFER_LIST* currentNBL = netBufferLists;
+
 	BOOLEAN dispatchLevel;
 
 	do
@@ -500,7 +531,7 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 		// If the filter is not in running state, fail the send
 		if (filterContext->filterState != FilterRunning)
 		{
-
+			NET_BUFFER_LIST* currentNBL = netBufferLists;
 			while (currentNBL != NULL)
 			{
 				NET_BUFFER_LIST_STATUS(currentNBL) = NDIS_STATUS_PAUSED;
@@ -513,28 +544,8 @@ VOID WPTReceivedFromUpper(NDIS_HANDLE filterModuleContext, NET_BUFFER_LIST* netB
 			break;
 		}
 
-
-		//Get all netbuffer structure in NBLs
-		while (currentNBL != NULL) {
-
-		
-			for (NET_BUFFER* netbuffer = NET_BUFFER_LIST_FIRST_NB(currentNBL); netbuffer != NULL; netbuffer = NET_BUFFER_NEXT_NB(netbuffer)) {
-
-				VOID* freeSpace = ExAllocatePoolWithTag(NonPagedPool, netbuffer->DataLength, TEMP_POOL_ALLOC_TAG);
-				if (freeSpace != NULL) {
-					VOID* ethDataPtr = NdisGetDataBuffer(netbuffer, netbuffer->DataLength, freeSpace, 1, 0);
-
-					WriteEthFrameToRingBuffer(&commRingBuffer, ethDataPtr, netbuffer->DataLength, filterContext, UpperToFilter);
-
-					ExFreePoolWithTag(freeSpace, TEMP_POOL_ALLOC_TAG);
-					freeSpace = NULL;
-					ethDataPtr = NULL;
-
-				}
-
-			}
-
-			currentNBL = NET_BUFFER_LIST_NEXT_NBL(currentNBL);
+		if (ringBufferReadyFlag) {
+			WriteNBLIntoRingBuffer(&kernel2userRingBuffer_OUTBOUND, netBufferLists, UpperToFilter, filterContext->miniportIfIndex);
 		}
 
 		NdisFSendNetBufferListsComplete(filterContext->filterHandle, netBufferLists, sendFlags);

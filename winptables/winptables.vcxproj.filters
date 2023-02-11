@@ -36,6 +36,9 @@
     <ClCompile Include="winptables_comm_device.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="transfer_routines.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="global.h">
@@ -48,6 +51,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="winptables_comm_device.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="transfer_routines.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

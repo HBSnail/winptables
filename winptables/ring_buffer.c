@@ -10,6 +10,28 @@
 
  /*++
 
+  Routine Description:
+
+	Get available data length in byte of a ring buffer
+
+  Arguments:
+
+	 RING_BUFFER* ringBuffer - the pointer of a ring buffer structure
+
+  Return Value:
+
+	  ULONG indecate the length in byte
+
+  --*/
+ULONG GetRingBufferAvailable(RING_BUFFER* ringBuffer) {
+	return ((ringBuffer->RING_BUFFER_SHARED_VARIABLES.head) >= (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail)) ?
+		((ringBuffer->RING_BUFFER_SHARED_VARIABLES.head) - (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail)) :
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize - (ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail) + (ringBuffer->RING_BUFFER_SHARED_VARIABLES.head);
+}
+
+
+ /*++
+
  Routine Description:
 
 	Init a ring buffer structure
@@ -17,52 +39,76 @@
  Arguments:
 
 	RING_BUFFER* ringBuffer - the pointer of a ring buffer structure
-	UINT powerOf2length - the maxium length of the ring buffer will be set to (2^powerOf2length)bytes
+	ULONG powerOf2length - the maxium length of the ring buffer will be set to (2^powerOf2length)bytes
 
  Return Value:
 
 	 NTSTATUS indecate if the ring buffer init successful
 
  --*/
-NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN UINT powerOf2length) {
+NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length,IN UNICODE_STRING* syncEventName) {
 
 	NTSTATUS status = STATUS_SUCCESS;
 
 	do {
 
+
 		if (ringBuffer == NULL) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
-		UINT length = (1 << powerOf2length);
+
+		ringBuffer->bufferAddress = NULL;
+		ULONG length = (1 << powerOf2length);
 
 		if (length == 0) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		ringBuffer->head = 0;
-		ringBuffer->tail = 0;
-		ringBuffer->available = 0;
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.head = 0;
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail = 0;
 
-		NdisAllocateSpinLock(&(ringBuffer->resLock));
+		NdisAllocateSpinLock(&(ringBuffer->readLock));
 
-		if (&ringBuffer->resLock == NULL) {
+		if (&ringBuffer->readLock == NULL) {
 			status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 
-		ringBuffer->bufferAddress = ExAllocatePoolWithTag(NonPagedPool, length, RING_BUFFER_ALLOC_TAG);
+		NdisAllocateSpinLock(&(ringBuffer->writeLock));
+
+		if (&ringBuffer->writeLock == NULL) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+
+		ringBuffer->bufferAddress = ExAllocatePoolWithTag(NonPagedPoolNx, length, RING_BUFFER_ALLOC_TAG);
 		if (ringBuffer->bufferAddress == NULL) {
 			status = STATUS_UNSUCCESSFUL;
-			NdisFreeSpinLock(&ringBuffer->resLock);
 			break;
 		}
 
-		KeInitializeEvent(&ringBuffer->dataWrite, SynchronizationEvent,FALSE);
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize = length;
+		ringBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor = length - 1;
+		ringBuffer->dataBlockWrite = NULL;
 
-		ringBuffer->bufferSize = length;
-		ringBuffer->modFactor = length - 1;
+		/*
+		ringBuffer->dataBlockWrite = ExAllocatePool(NonPagedPoolNx, sizeof(KEVENT));
+
+		if (ringBuffer->dataBlockWrite == NULL) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
+		KeInitializeEvent(ringBuffer->dataBlockWrite, SynchronizationEvent, FALSE);
+		*/
+
+		ringBuffer->dataBlockWrite = IoCreateSynchronizationEvent(syncEventName,&ringBuffer->dataBlockWriteEventHandle);
+
+		if (ringBuffer->dataBlockWrite == NULL) {
+			status = STATUS_UNSUCCESSFUL;
+			break;
+		}
 
 
 	} while (FALSE);
@@ -97,13 +143,15 @@ VOID FreeRingBuffer(IN RING_BUFFER* ringBuffer) {
 		ringBuffer->bufferAddress = NULL;
 	}
 
-	NdisFreeSpinLock(&ringBuffer->resLock);
+	ZwClose(ringBuffer->dataBlockWriteEventHandle);
 
-	ringBuffer->head = 0;
-	ringBuffer->tail = 0;
-	ringBuffer->bufferSize = 0;
-	ringBuffer->available = 0;
-	ringBuffer->modFactor = 0;
+	NdisFreeSpinLock(&ringBuffer->writeLock);
+	NdisFreeSpinLock(&ringBuffer->readLock);
+
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.head = 0;
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.tail = 0;
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize = 0;
+	ringBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor = 0;
 
 }
 
@@ -118,7 +166,7 @@ Arguments:
 
 	RING_BUFFER* destinationRingBuffer - the pointer of a ring buffer structure to be written
 	VOID* sourceBuffer
-	UINT length - the length to be written
+	ULONG length - the length to be written
 	BOOLEAN isLocked - indecate whether the resource lock of the ring buffer has been acquired or not
 
 Return Value:
@@ -126,33 +174,32 @@ Return Value:
 	NTSTATUS - whether writing successful
 
 --*/
-NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, UINT length, BOOLEAN isLocked) {
+NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, ULONG length, BOOLEAN isLocked) {
 
 	NTSTATUS status = STATUS_SUCCESS;
 	BOOLEAN dispatchLevel = (KeGetCurrentIrql() == DISPATCH_LEVEL);
 
 	//Before write must get the spin lock first. Only one thread can read or write the same ring buffer.
 	if (!isLocked) {
-		NDIS_ACQUIRE_LOCK(&destinationRingBuffer->resLock, dispatchLevel);
+		NDIS_ACQUIRE_LOCK(&destinationRingBuffer->writeLock, dispatchLevel);
 	}
 
 	//Check if the ring buffer has space to write
-	if (destinationRingBuffer->available + length < destinationRingBuffer->bufferSize) {
+	if (GetRingBufferAvailable  (destinationRingBuffer) + length < destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize) {
 
 		//If it has free space, check whether needs turning
-		if (destinationRingBuffer->head + length < destinationRingBuffer->bufferSize) {
+		if (destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head + length < destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize) {
 			//Direct copy memory
-			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->head, (BYTE*)sourceBuffer, length);
+			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head, (BYTE*)sourceBuffer, length);
 		}
 		else {
 			//Get the length and copy twice
-			UINT partLength = destinationRingBuffer->bufferSize - destinationRingBuffer->head;
-			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->head, (BYTE*)sourceBuffer, partLength);
+			ULONG partLength = destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize - destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head;
+			NdisMoveMemory(destinationRingBuffer->bufferAddress + destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head, (BYTE*)sourceBuffer, partLength);
 			NdisMoveMemory(destinationRingBuffer->bufferAddress, (BYTE*)sourceBuffer + partLength, length - partLength);
 		}
 
-		destinationRingBuffer->head = (destinationRingBuffer->head + length) & (destinationRingBuffer->modFactor);
-		destinationRingBuffer->available += length;
+		destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head = (destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.head + length) & (destinationRingBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor);
 
 	}
 	else {
@@ -165,7 +212,7 @@ NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuff
 
 	//After write release the spin lock. Allow other threads read or write.
 	if (!isLocked) {
-		NDIS_RELEASE_LOCK(&destinationRingBuffer->resLock, dispatchLevel);
+		NDIS_RELEASE_LOCK(&destinationRingBuffer->writeLock, dispatchLevel);
 	}
 	
 
@@ -183,7 +230,7 @@ Arguments:
 
 	RING_BUFFER* sourceRingBuffer - the pointer of a ring buffer structure to be read
 	VOID* destinationBuffer
-	UINT length - the length to be read
+	ULONG length - the length to be read
 	BOOLEAN isLocked - indecate whether the resource lock of the ring buffer has been acquired or not
 
 Return Value:
@@ -191,32 +238,31 @@ Return Value:
 	NTSTATUS - whether reading successful
 
 --*/
-NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, UINT length, BOOLEAN isLocked) {
+NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, ULONG length, BOOLEAN isLocked) {
 	NTSTATUS status = STATUS_SUCCESS;
 	BOOLEAN dispatchLevel = (KeGetCurrentIrql() == DISPATCH_LEVEL);
 
 	//Before read must get the spin lock first. Only one thread can read or write the same ring buffer.
 	if (!isLocked) {
-		NDIS_ACQUIRE_LOCK(&sourceRingBuffer->resLock, dispatchLevel);
+		NDIS_ACQUIRE_LOCK(&sourceRingBuffer->readLock, dispatchLevel);
 	}
 		
 
-	if (sourceRingBuffer->available >= length) {
+	if (GetRingBufferAvailable(sourceRingBuffer) >= length) {
 
 
-		if (sourceRingBuffer->tail + length < sourceRingBuffer->bufferSize) {
+		if (sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail + length < sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize) {
 			//Direct copy memory
-			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->tail, length);
+			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail, length);
 		}
 		else {
 			//Get the length and copy twice
-			UINT partLength = sourceRingBuffer->bufferSize - sourceRingBuffer->tail;
-			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->tail, partLength);
+			ULONG partLength = sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.bufferSize - sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail;
+			NdisMoveMemory((BYTE*)destinationBuffer, sourceRingBuffer->bufferAddress + sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail, partLength);
 			NdisMoveMemory((BYTE*)destinationBuffer + partLength, sourceRingBuffer->bufferAddress, length - partLength);
 		}
 
-		sourceRingBuffer->tail = (sourceRingBuffer->tail + length) & (sourceRingBuffer->modFactor);
-		sourceRingBuffer->available -= length;
+		sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail = (sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.tail + length) & (sourceRingBuffer->RING_BUFFER_SHARED_VARIABLES.modFactor);
 
 	}
 	else {
@@ -228,7 +274,7 @@ NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffe
 
 	//After read release the spin lock. Allow other threads enter.
 	if (!isLocked) {
-		NDIS_RELEASE_LOCK(&sourceRingBuffer->resLock, dispatchLevel);
+		NDIS_RELEASE_LOCK(&sourceRingBuffer->readLock, dispatchLevel);
 	}
 		
 
@@ -240,7 +286,7 @@ NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffe
 
 Routine Description:
 
-   Read one ethernet frame from ring buffer
+   Read a data block from ring buffer
 
 Arguments:
 
@@ -249,40 +295,20 @@ Arguments:
 
 Return Value:
 
-	UINT - the length copy to destinationBuffer in byte
+	NTSTATUS - whether read successful
 
 --*/
-UINT ReadEthFrameFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* destinationBuffer) {
+NTSTATUS ReadBlockFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* destinationBuffer) {
 
-
-	BOOLEAN dispatchLevel = (KeGetCurrentIrql() == DISPATCH_LEVEL);
 
 	//Warning!!!
 	//DO NOT attempt wait for a event/semaphore when holding the spin lock, otherwise it may cause deadlock.
-	while (sourceRingBuffer->available == 0) {
-		KeWaitForSingleObject(&sourceRingBuffer->dataWrite, Executive, KernelMode, FALSE, NULL);
+	while (GetRingBufferAvailable(sourceRingBuffer) < RING_BUFFER_BLOCK_SIZE) {
+		KeWaitForSingleObject(sourceRingBuffer->dataBlockWrite, Executive, KernelMode, FALSE, NULL);
 	}
 
-
-	//Before read must get the spin lock first. Only one thread can read or write the same ring buffer.
-	NDIS_ACQUIRE_LOCK(&sourceRingBuffer->resLock, dispatchLevel);
-	UINT totalLength;
-
-	if (sourceRingBuffer->available > sizeof(UINT)) {
-		
-		ReadRingBuffer(sourceRingBuffer, &totalLength, sizeof(UINT), TRUE);
-		totalLength -= sizeof(UINT);
-		ReadRingBuffer(sourceRingBuffer, destinationBuffer, totalLength, TRUE);
-	}
-	else {
-
-		totalLength = 0;
-		//No data to read
-	}
-
-	NDIS_RELEASE_LOCK(&sourceRingBuffer->resLock, dispatchLevel);
-
-	return totalLength;
+	return ReadRingBuffer(sourceRingBuffer, destinationBuffer, RING_BUFFER_BLOCK_SIZE, FALSE);
+	
 }
 
 
@@ -290,49 +316,26 @@ UINT ReadEthFrameFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* desti
 
 Routine Description:
 
-   Write one ethernet frame from ring buffer
+   Write a data block from ring buffer
 
 Arguments:
 
 	RING_BUFFER* destinationRingBuffer - the pointer of a ring buffer structure to be written
-	VOID* sourceBuffer - contains the ethernet frame
-	UINT length - the length of the ethernet frame
-	FILTER_CONTEXT* context - the context of the ethernet frame to indecate the NIC
-	TRANSFER_DIRECION transferDirection 
+	VOID* sourceBuffer
 
 Return Value:
 
-	NTSTATUS - whether writing ethernet frame successful
+	NTSTATUS - whether read successful
 
 --*/
-NTSTATUS WriteEthFrameToRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, UINT length, FILTER_CONTEXT* context, TRANSFER_DIRECION transferDirection) {
+NTSTATUS WriteBlockToRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer) {
 
 	NTSTATUS status = STATUS_SUCCESS;
 
-
-	BYTE direction = transferDirection;
-	UINT lengthWrite = length;
-	UINT totalLength = sizeof(UINT) + sizeof(BYTE) + sizeof(ULONG) + sizeof(UINT) + lengthWrite;
-	BYTE* tempbuffer = ExAllocatePoolWithTag(NonPagedPool, totalLength, TEMP_POOL_ALLOC_TAG);
-
-	if (tempbuffer == NULL) {
-		status = STATUS_UNSUCCESSFUL;
-		return status;
-	}
-
-	NdisMoveMemory(tempbuffer, &totalLength, sizeof(UINT));
-	NdisMoveMemory(tempbuffer + sizeof(UINT), &direction, sizeof(BYTE));
-	NdisMoveMemory(tempbuffer + sizeof(UINT) + sizeof(BYTE), &(context->miniportIfIndex), sizeof(ULONG));
-	NdisMoveMemory(tempbuffer + sizeof(UINT) + sizeof(BYTE) + sizeof(ULONG), &lengthWrite, sizeof(UINT));
-	NdisMoveMemory(tempbuffer + sizeof(UINT) + sizeof(BYTE) + sizeof(ULONG) + sizeof(UINT), sourceBuffer, lengthWrite);
-
-	status = WriteRingBuffer(destinationRingBuffer, tempbuffer, totalLength, FALSE);
-
-	ExFreePoolWithTag(tempbuffer, TEMP_POOL_ALLOC_TAG);
-	tempbuffer = NULL;
+	status = WriteRingBuffer(destinationRingBuffer, sourceBuffer, RING_BUFFER_BLOCK_SIZE, FALSE);
 
 	if (NT_SUCCESS(status)) {
-		KeSetEvent(&destinationRingBuffer->dataWrite, IO_NO_INCREMENT, FALSE);
+		KeSetEvent(destinationRingBuffer->dataBlockWrite, IO_NO_INCREMENT, FALSE);
 	}
 
 	return status;

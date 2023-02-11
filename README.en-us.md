@@ -1,7 +1,8 @@
 # winptables (Windows Packet Tables)
 
-
-### [Official Site](https://winptables.icseclab.org) | [Wiki](https://github.com/icSecLab/winptables/wiki)
+#### *Although this project is not finished, the further development has terminated. 
+#### *The code here just for referencing. Since we no longer support this project, please do not open any issue or pull request.
+#### *This project will be replaced by a newly-built packets filtering framework (winpfilter) and a firewall framework(winptables, same name, but not this one).
 
 [简体中文](./README.md) | English
 

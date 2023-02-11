@@ -10,33 +10,39 @@
 
     #define _RING_BUFFER_H_
 
+    #define RING_BUFFER_BLOCK_SIZE 1660
     #include "global.h"
 
     typedef struct _RING_BUFFER
     {
+        struct _RING_BUFFER_SHARED_VARIABLES
+        {
+            ULONG head;
+            ULONG tail;
+            ULONG bufferSize;
+            ULONG modFactor;
+        }RING_BUFFER_SHARED_VARIABLES;
 
-        NDIS_SPIN_LOCK resLock;
+        KEVENT* dataBlockWrite;
+        HANDLE dataBlockWriteEventHandle;
+        NDIS_SPIN_LOCK writeLock;
+        NDIS_SPIN_LOCK readLock;
         BYTE* bufferAddress;
-        UINT head;
-        UINT tail;
-        UINT available;
-        UINT bufferSize;
-        UINT modFactor;
-        KEVENT dataWrite;
 
     }RING_BUFFER;
 
-	NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN UINT powerOf2length);
+    NTSTATUS InitRingBuffer(IN RING_BUFFER* ringBuffer, IN ULONG powerOf2length, IN UNICODE_STRING* syncEventName);
 
 	VOID FreeRingBuffer(IN RING_BUFFER* ringBuffer);
 
-	NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, UINT length, BOOLEAN isLocked);
+	NTSTATUS WriteRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, ULONG length, BOOLEAN isLocked);
 
-	NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, UINT length, BOOLEAN isLocked);
+	NTSTATUS ReadRingBuffer(IN RING_BUFFER* sourceRingBuffer, VOID* destinationBuffer, ULONG length, BOOLEAN isLocked);
 
-	UINT ReadEthFrameFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* destinationBuffer);
+	NTSTATUS ReadBlockFromRingBuffer(IN RING_BUFFER* sourceRingBuffer, IN VOID* destinationBuffer);
 
-    NTSTATUS WriteEthFrameToRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer, UINT length, FILTER_CONTEXT* context, TRANSFER_DIRECION transferDirection);
+
+    NTSTATUS WriteBlockToRingBuffer(IN RING_BUFFER* destinationRingBuffer, VOID* sourceBuffer);
 
 
 #endif
