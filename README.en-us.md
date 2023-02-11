@@ -1,6 +1,6 @@
 # winptables (Windows Packet Tables)
 
-#### *Although this project is not finished, the further development has terminated. 
+#### *Although this project is not a finished project, the further development has been terminated. 
 #### *The code here just for referencing. Since we no longer support this project, please do not open any issue or pull request.
 #### *This project will be replaced by a newly-built packets filtering framework (winpfilter) and a firewall framework(winptables, same name, but not this one).
 
