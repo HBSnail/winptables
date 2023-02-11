@@ -1,7 +1,9 @@
 # winptables (Windows Packet Tables)
 
 
-### [项目官网](https://winptables.icseclab.org) | [使用帮助](https://github.com/icSecLab/winptables/wiki)
+#### *本项目为未完成但终止开发项目，仅供参考，不再提供支持，请不要向本项目发Pr或Issue
+#### *本项目将由全新设计的包过滤框架(winpfilter)和防火墙框架(winptables,同名但与本项目无关)替代
+
 
 简体中文 | [English](./README.en-us.md)
 
